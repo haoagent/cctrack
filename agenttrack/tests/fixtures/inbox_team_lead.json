@@ -1,0 +1,16 @@
+[
+  {
+    "from": "brainstormer",
+    "text": "Status: DONE. The design spec is complete.",
+    "summary": "Brainstorming complete, spec ready",
+    "timestamp": "2026-03-19T16:28:49.266Z",
+    "read": false,
+    "color": "blue"
+  },
+  {
+    "type": "idle_notification",
+    "from": "brainstormer",
+    "timestamp": "2026-03-19T16:29:01.000Z",
+    "idleReason": "available"
+  }
+]

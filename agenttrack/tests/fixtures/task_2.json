@@ -1,0 +1,9 @@
+{
+  "id": "2",
+  "subject": "spec-reviewer",
+  "description": "Review the spec document",
+  "status": "in_progress",
+  "blocks": ["3", "4"],
+  "blockedBy": ["1"],
+  "metadata": { "_internal": true }
+}

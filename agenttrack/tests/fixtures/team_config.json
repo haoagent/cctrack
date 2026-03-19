@@ -1,0 +1,32 @@
+{
+  "name": "my-project",
+  "description": "Working on feature X",
+  "createdAt": 1773937440760,
+  "leadAgentId": "team-lead@my-project",
+  "leadSessionId": "fff799d7-662d-43b3-9939-f1054a54d0ab",
+  "members": [
+    {
+      "agentId": "team-lead@my-project",
+      "name": "team-lead",
+      "agentType": "team-leader",
+      "model": "claude-sonnet-4-6",
+      "joinedAt": 1773937440760,
+      "tmuxPaneId": "",
+      "cwd": "/Users/dev/project",
+      "subscriptions": []
+    },
+    {
+      "agentId": "brainstormer@my-project",
+      "name": "brainstormer",
+      "agentType": "general-purpose",
+      "model": "claude-opus-4-6",
+      "color": "blue",
+      "planModeRequired": false,
+      "joinedAt": 1773937474005,
+      "tmuxPaneId": "in-process",
+      "cwd": "/Users/dev/project",
+      "subscriptions": [],
+      "backendType": "in-process"
+    }
+  ]
+}
