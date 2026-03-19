@@ -20,7 +20,7 @@ notify-debouncer-mini = "0.5"
 # HTTP server (hooks + web)
 axum = { version = "0.8", features = ["tokio"] }
 tower-http = { version = "0.6", features = ["cors"] }
-tokio-stream = "0.1"
+tokio-stream = { version = "0.1", features = ["sync"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }

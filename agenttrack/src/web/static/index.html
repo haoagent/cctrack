@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AgentTrack</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>AgentTrack</h1>
+      <div class="stats">
+        <span>Team: <span class="value" id="team-name">—</span></span>
+        <span>Agents: <span class="value" id="agent-count">0</span></span>
+        <span>Tasks: <span class="value" id="task-progress">0/0</span></span>
+        <span>Events: <span class="value" id="event-count">0</span></span>
+      </div>
+    </div>
+
+    <div class="grid">
+      <!-- Agents Panel -->
+      <div class="panel">
+        <div class="panel-title">Agents</div>
+        <table>
+          <thead>
+            <tr><th>Name</th><th>Model</th><th>Status</th></tr>
+          </thead>
+          <tbody id="agents-body"></tbody>
+        </table>
+        <div class="empty-state" id="agents-empty" style="display:none">
+          <h2>No agents</h2>
+          <p>Start an agent team in Claude Code</p>
+        </div>
+      </div>
+
+      <!-- Tasks Panel -->
+      <div class="panel">
+        <div class="panel-title">Tasks</div>
+        <table>
+          <thead>
+            <tr><th>ID</th><th>Status</th><th>Subject</th></tr>
+          </thead>
+          <tbody id="tasks-body"></tbody>
+        </table>
+        <div class="empty-state" id="tasks-empty" style="display:none">
+          <h2>No tasks</h2>
+        </div>
+      </div>
+
+      <!-- Activity Panel -->
+      <div class="panel full-width">
+        <div class="panel-title">Live Activity</div>
+        <div class="feed" id="activity-feed"></div>
+        <div class="empty-state" id="activity-empty">
+          <p>Enable hooks for live activity: <code>agenttrack hooks install</code></p>
+        </div>
+      </div>
+
+      <!-- Messages Panel -->
+      <div class="panel full-width">
+        <div class="panel-title">Messages</div>
+        <div class="feed" id="messages-feed"></div>
+        <div class="empty-state" id="messages-empty" style="display:none">
+          <h2>No messages yet</h2>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
