@@ -62,7 +62,7 @@ pub fn render(frame: &mut Frame, area: Rect, team: &TeamSnapshot, app: &AppState
 
     let items: Vec<ListItem> = if events.is_empty() {
         vec![ListItem::new(Line::from(vec![Span::styled(
-            "  Waiting for tool events... (hooks: cctrack hooks install)",
+            "  Listening...",
             theme::dim(),
         )]))]
     } else {
