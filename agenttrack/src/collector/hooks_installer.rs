@@ -52,25 +52,41 @@ pub fn install_hooks(claude_home: &Path, hook_port: u16) -> Result<(), String> {
         .as_array_mut()
         .ok_or("hooks.PostToolUse is not an array")?;
 
-    // Check if our entry already exists
+    // Check if our entry already exists (handles both flat and nested structures)
     let our_marker = format!("localhost:{}/hook", hook_port);
     let already_installed = post_tool_use.iter().any(|entry| {
+        // Check flat structure: {"command": "curl ..."}
         if let Some(cmd) = entry.get("command").and_then(|v| v.as_str()) {
-            cmd.contains(&our_marker) || cmd.contains("cctrack")
-        } else {
-            false
+            if cmd.contains(&our_marker) || cmd.contains("cctrack") {
+                return true;
+            }
         }
+        // Check nested structure: {"matcher": "*", "hooks": [{"command": "curl ..."}]}
+        if let Some(hooks) = entry.get("hooks").and_then(|v| v.as_array()) {
+            for hook in hooks {
+                if let Some(cmd) = hook.get("command").and_then(|v| v.as_str()) {
+                    if cmd.contains(&our_marker) || cmd.contains("cctrack") {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
     });
 
     if !already_installed {
-        // Build our hook entry
+        // Claude Code pipes hook event JSON to stdin.
+        // We use `curl -d @-` to read from stdin and POST to our hook server.
         let hook_command = format!(
-            "curl -s -X POST http://localhost:{}/hook -H 'Content-Type: application/json' -d '{{\"session_id\": \"$CLAUDE_SESSION_ID\", \"tool_name\": \"$CLAUDE_TOOL_NAME\", \"input\": $CLAUDE_TOOL_INPUT, \"output\": $CLAUDE_TOOL_OUTPUT, \"duration_ms\": $CLAUDE_TOOL_DURATION_MS}}'",
+            "curl -s -X POST http://localhost:{}/hook -d @-",
             hook_port
         );
         let entry = serde_json::json!({
-            "type": "command",
-            "command": hook_command
+            "matcher": "*",
+            "hooks": [{
+                "type": "command",
+                "command": hook_command
+            }]
         });
         post_tool_use.push(entry);
     }
@@ -105,15 +121,24 @@ pub fn uninstall_hooks(claude_home: &Path) -> Result<(), String> {
         if let Some(post_tool_use) = hooks.get_mut("PostToolUse") {
             if let Some(arr) = post_tool_use.as_array_mut() {
                 arr.retain(|entry| {
-                    if let Some(cmd) = entry.get("command").and_then(|v| v.as_str()) {
-                        // Remove entries matching our port range or containing "cctrack"
-                        let is_ours = (7890..=7899).any(|port| {
+                    let check_cmd = |cmd: &str| -> bool {
+                        (7890..=7899).any(|port| {
                             cmd.contains(&format!("localhost:{}/hook", port))
-                        });
-                        !is_ours
-                    } else {
-                        true // Keep entries without a command field
+                        })
+                    };
+                    // Check flat: {"command": "curl ..."}
+                    if let Some(cmd) = entry.get("command").and_then(|v| v.as_str()) {
+                        if check_cmd(cmd) { return false; }
                     }
+                    // Check nested: {"hooks": [{"command": "curl ..."}]}
+                    if let Some(hooks) = entry.get("hooks").and_then(|v| v.as_array()) {
+                        for hook in hooks {
+                            if let Some(cmd) = hook.get("command").and_then(|v| v.as_str()) {
+                                if check_cmd(cmd) { return false; }
+                            }
+                        }
+                    }
+                    true
                 });
             }
         }
