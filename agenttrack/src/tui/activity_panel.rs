@@ -1,7 +1,6 @@
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, ListState},
 };
@@ -63,8 +62,8 @@ pub fn render(frame: &mut Frame, area: Rect, team: &TeamSnapshot, app: &AppState
 
     let items: Vec<ListItem> = if events.is_empty() {
         vec![ListItem::new(Line::from(vec![Span::styled(
-            "  Enable hooks: cctrack hooks install",
-            Style::new().fg(Color::DarkGray),
+            "  Waiting for tool events... (hooks: cctrack hooks install)",
+            theme::dim(),
         )]))]
     } else {
         events
@@ -74,17 +73,28 @@ pub fn render(frame: &mut Frame, area: Rect, team: &TeamSnapshot, app: &AppState
                 let time = extract_time(&evt.timestamp);
                 let tool_sty = theme::tool_style(&evt.tool_name);
 
+                let duration = evt
+                    .duration_ms
+                    .map(|d| format!(" {}ms", d))
+                    .unwrap_or_default();
+
+                let summary_text = if evt.summary.is_empty() {
+                    String::new()
+                } else {
+                    let s = &evt.summary;
+                    if s.len() > 60 {
+                        format!(" {:.57}...", s)
+                    } else {
+                        format!(" {}", s)
+                    }
+                };
+
                 let line = Line::from(vec![
-                    Span::styled(time, Style::new().fg(Color::DarkGray)),
-                    Span::raw("  "),
-                    Span::styled(&evt.tool_name, tool_sty),
-                    Span::raw("  "),
-                    Span::styled(
-                        evt.duration_ms
-                            .map(|d| format!("{}ms", d))
-                            .unwrap_or_default(),
-                        Style::new().fg(Color::DarkGray),
-                    ),
+                    Span::styled(time, theme::dim()),
+                    Span::raw(" "),
+                    Span::styled(format!("{:<6}", evt.tool_name), tool_sty),
+                    Span::styled(summary_text, theme::text()),
+                    Span::styled(duration, theme::dim()),
                 ]);
                 ListItem::new(line)
             })
@@ -94,11 +104,11 @@ pub fn render(frame: &mut Frame, area: Rect, team: &TeamSnapshot, app: &AppState
     let border_style = if is_focused {
         ratatui::style::Style::new().fg(ratatui::style::Color::Cyan)
     } else {
-        theme::BORDER
+        theme::border()
     };
 
     let block = Block::default()
-        .title(Span::styled(panel_title, theme::TITLE))
+        .title(Span::styled(panel_title, theme::title()))
         .borders(Borders::ALL)
         .border_style(border_style);
 

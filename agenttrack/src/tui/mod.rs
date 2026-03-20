@@ -66,6 +66,8 @@ pub async fn run_tui(
                     .map(|t| t.agents.len())
                     .unwrap_or(0);
 
+                let team_count = last_snapshot.teams.len();
+
                 match key.code {
                     KeyCode::Char('q') => app.should_quit = true,
                     KeyCode::Char('j') | KeyCode::Down => {
@@ -75,14 +77,18 @@ pub async fn run_tui(
                     KeyCode::Char('k') | KeyCode::Up => app.scroll_up(),
                     KeyCode::Left => app.prev_agent(agent_count),
                     KeyCode::Right => app.next_agent(agent_count),
-                    KeyCode::Tab => app.next_panel(),
+                    KeyCode::Tab => app.next_team(team_count),
+                    KeyCode::BackTab => app.prev_team(team_count), // Shift+Tab
                     KeyCode::Char('1') => app.select_panel(app_state::Panel::Agents),
                     KeyCode::Char('2') => app.select_panel(app_state::Panel::Tasks),
                     KeyCode::Char('3') => app.select_panel(app_state::Panel::Activity),
                     KeyCode::Char('4') => app.select_panel(app_state::Panel::Messages),
                     KeyCode::Char('w') => {
-                        // Open web UI in browser
                         let _ = open::that("http://localhost:7891");
+                    }
+                    KeyCode::Char('t') => {
+                        let current = theme::is_light_mode();
+                        theme::set_light_mode(!current);
                     }
                     KeyCode::Char('?') => app.show_help = !app.show_help,
                     _ => {}
@@ -102,7 +108,7 @@ pub async fn run_tui(
 }
 
 fn panel_item_count(snapshot: &StoreSnapshot, app: &AppState) -> usize {
-    let team = match snapshot.teams.first() {
+    let team = match snapshot.teams.get(app.selected_team_index).or(snapshot.teams.first()) {
         Some(t) => t,
         None => return 0,
     };
@@ -116,11 +122,15 @@ fn panel_item_count(snapshot: &StoreSnapshot, app: &AppState) -> usize {
 
 /// Main render entry point -- called once per frame by the TUI event loop.
 pub fn render(frame: &mut Frame, snapshot: &StoreSnapshot, app: &AppState) {
+    // Paint background
+    let bg_widget = ratatui::widgets::Block::default().style(theme::bg());
+    frame.render_widget(bg_widget, frame.area());
+
     let areas = layout::build_layout(frame.area());
 
-    if let Some(team) = snapshot.teams.first() {
+    if let Some(team) = snapshot.teams.get(app.selected_team_index).or(snapshot.teams.first()) {
         // Render all panels for the first team
-        top_bar::render(frame, areas.top_bar, team, app);
+        top_bar::render(frame, areas.top_bar, team, app, snapshot);
         agents_panel::render(frame, areas.agents, team, app);
         tasks_panel::render(frame, areas.tasks, team, app);
         activity_panel::render(frame, areas.activity, team, app);
@@ -128,7 +138,7 @@ pub fn render(frame: &mut Frame, snapshot: &StoreSnapshot, app: &AppState) {
     } else {
         // No teams found -- centered placeholder
         let placeholder = Paragraph::new("No teams found")
-            .style(Style::new().fg(Color::DarkGray))
+            .style(theme::dim())
             .alignment(Alignment::Center);
         frame.render_widget(placeholder, areas.activity);
     }
@@ -141,15 +151,19 @@ pub fn render(frame: &mut Frame, snapshot: &StoreSnapshot, app: &AppState) {
 fn render_help_bar(frame: &mut Frame, area: ratatui::layout::Rect, _app: &AppState) {
     let help = Line::from(vec![
         Span::styled(" Tab", Style::new().fg(Color::Cyan)),
-        Span::styled(" panel ", Style::new().fg(Color::DarkGray)),
-        Span::styled("\u{2190}\u{2192}", Style::new().fg(Color::Cyan)), // ←→
-        Span::styled(" agent ", Style::new().fg(Color::DarkGray)),
+        Span::styled(" team ", theme::dim()),
+        Span::styled("1-4", Style::new().fg(Color::Cyan)),
+        Span::styled(" panel ", theme::dim()),
+        Span::styled("\u{2190}\u{2192}", Style::new().fg(Color::Cyan)),
+        Span::styled(" agent ", theme::dim()),
         Span::styled("j/k", Style::new().fg(Color::Cyan)),
-        Span::styled(" scroll ", Style::new().fg(Color::DarkGray)),
+        Span::styled(" scroll ", theme::dim()),
         Span::styled("q", Style::new().fg(Color::Cyan)),
-        Span::styled(" quit ", Style::new().fg(Color::DarkGray)),
+        Span::styled(" quit ", theme::dim()),
+        Span::styled("t", Style::new().fg(Color::Cyan)),
+        Span::styled(" theme ", theme::dim()),
         Span::styled("?", Style::new().fg(Color::Cyan)),
-        Span::styled(" help", Style::new().fg(Color::DarkGray)),
+        Span::styled(" help", theme::dim()),
     ]);
 
     let paragraph = Paragraph::new(help);

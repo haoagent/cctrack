@@ -33,6 +33,8 @@ impl Panel {
 pub struct AppState {
     /// The panel that currently has keyboard focus.
     pub active_panel: Panel,
+    /// Index of the currently selected team (for multi-team switching).
+    pub selected_team_index: usize,
     /// Index of the currently selected agent (used by activity panel).
     pub selected_agent_index: usize,
     /// One scroll-row cursor per panel.
@@ -47,11 +49,32 @@ impl AppState {
     pub fn new() -> Self {
         Self {
             active_panel: Panel::Agents,
+            selected_team_index: 0,
             selected_agent_index: 0,
             selected_rows: [0; 4],
             should_quit: false,
             show_help: false,
         }
+    }
+
+    /// Cycle to the next team.
+    pub fn next_team(&mut self, max: usize) {
+        if max == 0 { return; }
+        self.selected_team_index = (self.selected_team_index + 1) % max;
+        self.selected_agent_index = 0;
+        self.selected_rows = [0; 4];
+    }
+
+    /// Cycle to the previous team.
+    pub fn prev_team(&mut self, max: usize) {
+        if max == 0 { return; }
+        if self.selected_team_index == 0 {
+            self.selected_team_index = max - 1;
+        } else {
+            self.selected_team_index -= 1;
+        }
+        self.selected_agent_index = 0;
+        self.selected_rows = [0; 4];
     }
 
     /// Cycle to the next panel (Tab key).

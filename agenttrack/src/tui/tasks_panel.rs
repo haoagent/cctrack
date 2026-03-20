@@ -15,9 +15,9 @@ pub fn render(frame: &mut Frame, area: Rect, team: &TeamSnapshot, app: &AppState
 
     // Header
     let header = Row::new(vec![
-        Cell::from(Span::styled("ID", theme::HEADER)),
-        Cell::from(Span::styled("STATUS", theme::HEADER)),
-        Cell::from(Span::styled("SUBJECT", theme::HEADER)),
+        Cell::from(Span::styled("ID", theme::header())),
+        Cell::from(Span::styled("STATUS", theme::header())),
+        Cell::from(Span::styled("SUBJECT", theme::header())),
     ])
     .height(1);
 
@@ -45,9 +45,9 @@ pub fn render(frame: &mut Frame, area: Rect, team: &TeamSnapshot, app: &AppState
             let subject = task.subject.as_deref().unwrap_or("-");
 
             Row::new(vec![
-                Cell::from(Span::raw(&task.id)),
+                Cell::from(Span::styled(&task.id, theme::dim())),
                 Cell::from(Span::styled(display_status, sty)),
-                Cell::from(Span::raw(subject)),
+                Cell::from(Span::styled(subject, theme::text())),
             ])
         })
         .collect();
@@ -55,11 +55,11 @@ pub fn render(frame: &mut Frame, area: Rect, team: &TeamSnapshot, app: &AppState
     let border_style = if is_focused {
         ratatui::style::Style::new().fg(ratatui::style::Color::Cyan)
     } else {
-        theme::BORDER
+        theme::border()
     };
 
     let block = Block::default()
-        .title(Span::styled(" Tasks ", theme::TITLE))
+        .title(Span::styled(" Tasks ", theme::title()))
         .borders(Borders::ALL)
         .border_style(border_style);
 

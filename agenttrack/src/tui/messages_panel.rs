@@ -40,7 +40,7 @@ pub fn render(frame: &mut Frame, area: Rect, team: &TeamSnapshot, app: &AppState
     let items: Vec<ListItem> = if filtered.is_empty() {
         vec![ListItem::new(Line::from(vec![Span::styled(
             "  No messages yet",
-            Style::new().fg(Color::DarkGray),
+            theme::dim(),
         )]))]
     } else {
         // Show messages in chronological order (most recent at bottom)
@@ -65,19 +65,19 @@ pub fn render(frame: &mut Frame, area: Rect, team: &TeamSnapshot, app: &AppState
                     MessageType::PlanApproval => Style::new()
                         .fg(Color::Yellow)
                         .add_modifier(Modifier::BOLD),
-                    MessageType::ShutdownNotification => Style::new().fg(Color::DarkGray),
+                    MessageType::ShutdownNotification => theme::dim(),
                     MessageType::Broadcast => Style::new().fg(Color::Magenta),
                     _ => Style::new().fg(Color::Cyan),
                 };
 
                 let line = Line::from(vec![
-                    Span::styled(time, Style::new().fg(Color::DarkGray)),
+                    Span::styled(time, theme::dim()),
                     Span::raw("  "),
                     Span::styled(&msg.from, from_style),
-                    Span::styled(" \u{2192} ", Style::new().fg(Color::DarkGray)), // →
-                    Span::styled(&msg.to, Style::new().fg(Color::White)),
-                    Span::styled(": ", Style::new().fg(Color::DarkGray)),
-                    Span::raw(summary),
+                    Span::styled(" \u{2192} ", theme::dim()), // →
+                    Span::styled(&msg.to, theme::text().add_modifier(Modifier::BOLD)),
+                    Span::styled(": ", theme::dim()),
+                    Span::styled(summary, theme::text()),
                 ]);
                 ListItem::new(line)
             })
@@ -87,11 +87,11 @@ pub fn render(frame: &mut Frame, area: Rect, team: &TeamSnapshot, app: &AppState
     let border_style = if is_focused {
         ratatui::style::Style::new().fg(ratatui::style::Color::Cyan)
     } else {
-        theme::BORDER
+        theme::border()
     };
 
     let block = Block::default()
-        .title(Span::styled(" Messages ", theme::TITLE))
+        .title(Span::styled(" Messages ", theme::title()))
         .borders(Borders::ALL)
         .border_style(border_style);
 

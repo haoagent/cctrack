@@ -157,6 +157,17 @@ pub enum AgentStatus {
     Unknown,
 }
 
+impl AgentStatus {
+    pub fn label(&self) -> &'static str {
+        match self {
+            AgentStatus::Active => "Active",
+            AgentStatus::Idle => "Idle",
+            AgentStatus::Shutdown => "Shutdown",
+            AgentStatus::Unknown => "Unknown",
+        }
+    }
+}
+
 impl Default for AgentStatus {
     fn default() -> Self {
         AgentStatus::Unknown
@@ -193,6 +204,8 @@ pub struct ToolEvent {
     pub agent_name: String,
     pub tool_name: String,
     pub timestamp: String,
+    #[serde(default)]
+    pub summary: String,
     #[serde(default)]
     pub duration_ms: Option<u64>,
     #[serde(default)]

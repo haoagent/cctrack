@@ -44,10 +44,10 @@ async fn team_update_creates_agents() {
     assert_eq!(team.description, "Working on feature X");
     assert_eq!(team.agents.len(), 2);
 
-    // Agents should exist with Unknown status initially
+    // Agents should exist with Active status initially (present in config = active)
     let lead = team.agents.iter().find(|a| a.name == "team-lead").unwrap();
     assert_eq!(lead.agent_type.as_deref(), Some("team-leader"));
-    assert_eq!(lead.status, AgentStatus::Unknown);
+    assert_eq!(lead.status, AgentStatus::Active);
 
     let brainstormer = team
         .agents
@@ -55,7 +55,7 @@ async fn team_update_creates_agents() {
         .find(|a| a.name == "brainstormer")
         .unwrap();
     assert_eq!(brainstormer.color.as_deref(), Some("blue"));
-    assert_eq!(brainstormer.status, AgentStatus::Unknown);
+    assert_eq!(brainstormer.status, AgentStatus::Active);
 }
 
 #[tokio::test]
@@ -159,9 +159,9 @@ async fn idle_notification_updates_agent_status() {
         .unwrap();
     assert_eq!(brainstormer.status, AgentStatus::Idle);
 
-    // The team-lead should still be Unknown (no status update for them)
+    // The team-lead should still be Active (no status update for them)
     let lead = team.agents.iter().find(|a| a.name == "team-lead").unwrap();
-    assert_eq!(lead.status, AgentStatus::Unknown);
+    assert_eq!(lead.status, AgentStatus::Active);
 }
 
 #[tokio::test]

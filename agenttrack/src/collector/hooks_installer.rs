@@ -78,7 +78,7 @@ pub fn install_hooks(claude_home: &Path, hook_port: u16) -> Result<(), String> {
         // Claude Code pipes hook event JSON to stdin.
         // We use `curl -d @-` to read from stdin and POST to our hook server.
         let hook_command = format!(
-            "curl -s -X POST http://localhost:{}/hook -d @-",
+            "curl -s -X POST http://localhost:{}/hook -H 'Content-Type: application/json' -d @-",
             hook_port
         );
         let entry = serde_json::json!({

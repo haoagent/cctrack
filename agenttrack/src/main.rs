@@ -22,6 +22,10 @@ struct Cli {
     #[arg(long, default_value = "7891")]
     port: u16,
 
+    /// Use light theme (for light terminal backgrounds)
+    #[arg(long)]
+    light: bool,
+
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -76,6 +80,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         None => {}
     }
+
+    // Set theme mode
+    tui::theme::set_light_mode(cli.light);
 
     // Auto-install hooks on first run
     let claude_home = Config::claude_home();

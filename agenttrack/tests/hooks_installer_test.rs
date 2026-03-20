@@ -23,7 +23,7 @@ fn install_into_empty_settings() {
     let arr = post_tool_use.as_array().unwrap();
     assert_eq!(arr.len(), 1);
 
-    let cmd = arr[0]["command"].as_str().unwrap();
+    let cmd = arr[0]["hooks"][0]["command"].as_str().unwrap();
     assert!(cmd.contains("localhost:7890/hook"));
 }
 
@@ -69,7 +69,7 @@ fn install_preserves_existing_hooks() {
     assert!(post_tool_use.is_array());
     let arr = post_tool_use.as_array().unwrap();
     assert_eq!(arr.len(), 1);
-    assert!(arr[0]["command"]
+    assert!(arr[0]["hooks"][0]["command"]
         .as_str()
         .unwrap()
         .contains("localhost:7891/hook"));

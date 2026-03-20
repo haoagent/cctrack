@@ -6,6 +6,7 @@ use super::event::{Event, StoreSnapshot, TeamSnapshot};
 use super::models::*;
 
 const TOOL_EVENT_RING_SIZE: usize = 500;
+const SOLO_TEAM_NAME: &str = "_solo";
 
 /// Internal per-team mutable state.
 #[derive(Debug)]
@@ -30,7 +31,7 @@ impl TeamState {
                 agent_type: m.agent_type.clone(),
                 model: m.model.clone(),
                 color: m.color.clone(),
-                status: AgentStatus::Unknown,
+                status: AgentStatus::Active, // Agents are active when they appear in config
             })
             .collect();
 
@@ -56,7 +57,7 @@ impl TeamState {
                     .iter()
                     .find(|a| a.name == m.name)
                     .map(|a| a.status.clone())
-                    .unwrap_or(AgentStatus::Unknown);
+                    .unwrap_or(AgentStatus::Active);
 
                 Agent {
                     name: m.name.clone(),
@@ -138,6 +139,28 @@ impl TeamState {
                 agent.status = status;
             }
         }
+    }
+
+    /// Ensure a session is registered as an agent. Returns true if new.
+    fn ensure_agent(&mut self, session_id: &str) -> bool {
+        if self.agents.iter().any(|a| a.agent_id == session_id || a.name == session_id) {
+            return false;
+        }
+        // Derive a short display name from session_id
+        let display_name = if session_id.len() > 8 {
+            format!("session-{}", &session_id[..8])
+        } else {
+            session_id.to_string()
+        };
+        self.agents.push(Agent {
+            name: display_name,
+            agent_id: session_id.to_string(),
+            agent_type: Some("session".to_string()),
+            model: None,
+            color: None,
+            status: AgentStatus::Active,
+        });
+        true
     }
 
     /// Append a tool event to the ring buffer.
@@ -259,21 +282,32 @@ impl Store {
                     }
                 }
                 Event::ToolCall(tool_event) => {
-                    // Find team by agent name, or broadcast to all teams
                     let agent = &tool_event.agent_name;
                     let mut found = false;
+
+                    // Try to find matching team by agent name/id
                     for state in teams.values_mut() {
-                        if state.agents.iter().any(|a| a.name == *agent) {
+                        if state.agents.iter().any(|a| a.name == *agent || a.agent_id == *agent) {
                             state.push_tool_event(tool_event.clone());
                             found = true;
                             break;
                         }
                     }
+
                     if !found {
-                        // If no team found, add to all teams
-                        for state in teams.values_mut() {
-                            state.push_tool_event(tool_event.clone());
-                        }
+                        // Route to solo team — create it if needed
+                        let solo = teams.entry(SOLO_TEAM_NAME.to_string()).or_insert_with(|| {
+                            TeamState::new(TeamConfig {
+                                name: "solo".to_string(),
+                                description: "All Claude Code sessions".to_string(),
+                                created_at: None,
+                                lead_agent_id: None,
+                                lead_session_id: None,
+                                members: Vec::new(),
+                            })
+                        });
+                        solo.ensure_agent(agent);
+                        solo.push_tool_event(tool_event);
                     }
                 }
             }

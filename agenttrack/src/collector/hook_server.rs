@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use axum::{extract::State, http::StatusCode, routing::post, Json, Router};
+use axum::{body::Bytes, extract::State, http::StatusCode, routing::post, Router};
 use serde::Deserialize;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
@@ -9,16 +9,20 @@ use crate::store::event::Event;
 use crate::store::models::ToolEvent;
 
 /// Payload received from Claude Code PostToolUse hooks.
+///
+/// Claude Code sends: session_id, tool_name, tool_input, tool_response, etc.
+/// We accept both `tool_input`/`input` and `tool_response`/`output` for robustness.
 #[derive(Debug, Deserialize)]
 pub struct HookPayload {
     #[serde(default)]
     pub session_id: String,
     #[serde(default)]
     pub tool_name: String,
-    #[serde(default)]
-    pub input: serde_json::Value,
-    #[serde(default)]
-    pub output: serde_json::Value,
+    /// Claude Code uses "tool_input"; we also accept "input" for manual testing
+    #[serde(default, alias = "input")]
+    pub tool_input: serde_json::Value,
+    #[serde(default, alias = "output")]
+    pub tool_response: serde_json::Value,
     #[serde(default)]
     pub duration_ms: u64,
     #[serde(flatten)]
@@ -85,14 +89,19 @@ struct AppState {
 
 async fn handle_hook(
     State(state): State<AppState>,
-    Json(payload): Json<HookPayload>,
+    body: Bytes,
 ) -> StatusCode {
-    let _summary = summarize_input(&payload.tool_name, &payload.input);
+    let payload: HookPayload = match serde_json::from_slice(&body) {
+        Ok(p) => p,
+        Err(_) => return StatusCode::BAD_REQUEST,
+    };
+    let summary = summarize_input(&payload.tool_name, &payload.tool_input);
 
     let tool_event = ToolEvent {
         agent_name: payload.session_id,
         tool_name: payload.tool_name,
         timestamp: chrono::Utc::now().to_rfc3339(),
+        summary,
         duration_ms: if payload.duration_ms > 0 {
             Some(payload.duration_ms)
         } else {
