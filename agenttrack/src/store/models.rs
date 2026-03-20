@@ -146,6 +146,30 @@ pub struct Agent {
     #[serde(default)]
     pub color: Option<String>,
     pub status: AgentStatus,
+    #[serde(default)]
+    pub tokens: TokenUsage,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TokenUsage {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_read_tokens: u64,
+    pub cache_create_tokens: u64,
+}
+
+impl TokenUsage {
+    pub fn total(&self) -> u64 {
+        self.input_tokens + self.output_tokens + self.cache_read_tokens + self.cache_create_tokens
+    }
+
+    /// Estimate cost in USD (Opus pricing: $15/MTok input, $75/MTok output, $1.5/MTok cache read)
+    pub fn estimated_cost_usd(&self) -> f64 {
+        let input = (self.input_tokens + self.cache_create_tokens) as f64 / 1_000_000.0 * 15.0;
+        let output = self.output_tokens as f64 / 1_000_000.0 * 75.0;
+        let cache = self.cache_read_tokens as f64 / 1_000_000.0 * 1.5;
+        input + output + cache
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -210,6 +234,8 @@ pub struct ToolEvent {
     pub duration_ms: Option<u64>,
     #[serde(default)]
     pub success: Option<bool>,
+    #[serde(default)]
+    pub cwd: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -224,4 +250,6 @@ pub struct Metrics {
     pub blocked_tasks: usize,
     pub total_messages: usize,
     pub total_tool_calls: usize,
+    pub total_tokens: u64,
+    pub estimated_cost_usd: f64,
 }

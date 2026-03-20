@@ -31,7 +31,8 @@ impl TeamState {
                 agent_type: m.agent_type.clone(),
                 model: m.model.clone(),
                 color: m.color.clone(),
-                status: AgentStatus::Active, // Agents are active when they appear in config
+                status: AgentStatus::Active,
+                tokens: Default::default(),
             })
             .collect();
 
@@ -59,6 +60,13 @@ impl TeamState {
                     .map(|a| a.status.clone())
                     .unwrap_or(AgentStatus::Active);
 
+                let existing_tokens = self
+                    .agents
+                    .iter()
+                    .find(|a| a.name == m.name)
+                    .map(|a| a.tokens.clone())
+                    .unwrap_or_default();
+
                 Agent {
                     name: m.name.clone(),
                     agent_id: m.agent_id.clone(),
@@ -66,6 +74,7 @@ impl TeamState {
                     model: m.model.clone(),
                     color: m.color.clone(),
                     status: existing_status,
+                    tokens: existing_tokens,
                 }
             })
             .collect();
@@ -141,17 +150,23 @@ impl TeamState {
         }
     }
 
-    /// Ensure a session is registered as an agent. Returns true if new.
-    fn ensure_agent(&mut self, session_id: &str) -> bool {
+    /// Ensure a session is registered as an agent. Uses cwd for display name if available.
+    fn ensure_agent(&mut self, session_id: &str, cwd: Option<&str>) -> bool {
         if self.agents.iter().any(|a| a.agent_id == session_id || a.name == session_id) {
             return false;
         }
-        // Derive a short display name from session_id
-        let display_name = if session_id.len() > 8 {
-            format!("session-{}", &session_id[..8])
-        } else {
-            session_id.to_string()
-        };
+        // Use last component of cwd as display name, fallback to truncated session_id
+        let display_name = cwd
+            .and_then(|p| std::path::Path::new(p).file_name())
+            .and_then(|f| f.to_str())
+            .map(String::from)
+            .unwrap_or_else(|| {
+                if session_id.len() > 8 {
+                    format!("session-{}", &session_id[..8])
+                } else {
+                    session_id.to_string()
+                }
+            });
         self.agents.push(Agent {
             name: display_name,
             agent_id: session_id.to_string(),
@@ -159,6 +174,7 @@ impl TeamState {
             model: None,
             color: None,
             status: AgentStatus::Active,
+            tokens: Default::default(),
         });
         true
     }
@@ -204,6 +220,9 @@ impl TeamState {
             .filter(|t| !t.blocked_by.is_empty() && t.status.as_deref() != Some("completed"))
             .count();
 
+        let total_tokens: u64 = self.agents.iter().map(|a| a.tokens.total()).sum();
+        let estimated_cost_usd: f64 = self.agents.iter().map(|a| a.tokens.estimated_cost_usd()).sum();
+
         Metrics {
             total_agents,
             active_agents,
@@ -215,6 +234,8 @@ impl TeamState {
             blocked_tasks,
             total_messages: self.messages.len(),
             total_tool_calls: self.tool_events.len(),
+            total_tokens,
+            estimated_cost_usd,
         }
     }
 
@@ -306,8 +327,19 @@ impl Store {
                                 members: Vec::new(),
                             })
                         });
-                        solo.ensure_agent(agent);
+                        solo.ensure_agent(agent, tool_event.cwd.as_deref());
                         solo.push_tool_event(tool_event);
+                    }
+                }
+                Event::TokenUpdate { session_id, usage } => {
+                    // Update agent token usage in whichever team contains this session
+                    for state in teams.values_mut() {
+                        if let Some(agent) = state.agents.iter_mut().find(|a| {
+                            a.agent_id == session_id || a.name == session_id
+                        }) {
+                            agent.tokens = usage.clone();
+                            break;
+                        }
                     }
                 }
             }

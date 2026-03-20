@@ -6,7 +6,7 @@ use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 
 use crate::store::event::Event;
-use crate::store::models::ToolEvent;
+use crate::store::models::{TokenUsage, ToolEvent};
 
 /// Payload received from Claude Code PostToolUse hooks.
 ///
@@ -96,9 +96,12 @@ async fn handle_hook(
         Err(_) => return StatusCode::BAD_REQUEST,
     };
     let summary = summarize_input(&payload.tool_name, &payload.tool_input);
+    let session_id = payload.session_id;
+
+    let cwd = payload.extra.get("cwd").and_then(|v| v.as_str()).map(String::from);
 
     let tool_event = ToolEvent {
-        agent_name: payload.session_id,
+        agent_name: session_id.clone(),
         tool_name: payload.tool_name,
         timestamp: chrono::Utc::now().to_rfc3339(),
         summary,
@@ -108,11 +111,43 @@ async fn handle_hook(
             None
         },
         success: None,
+        cwd,
     };
 
     let _ = state.event_tx.send(Event::ToolCall(tool_event)).await;
 
+    // Parse transcript for token usage (best-effort, async)
+    if let Some(tp) = payload.extra.get("transcript_path").and_then(|v| v.as_str()) {
+        let transcript_path = tp.to_string();
+        let tx = state.event_tx.clone();
+        tokio::spawn(async move {
+            if let Some(usage) = read_transcript_usage(&transcript_path) {
+                let _ = tx.send(Event::TokenUpdate { session_id, usage }).await;
+            }
+        });
+    }
+
     StatusCode::OK
+}
+
+/// Read a transcript .jsonl file and sum all token usage.
+fn read_transcript_usage(path: &str) -> Option<TokenUsage> {
+    let content = std::fs::read_to_string(path).ok()?;
+    let mut usage = TokenUsage::default();
+    for line in content.lines() {
+        if !line.contains("\"usage\"") {
+            continue;
+        }
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(line) {
+            if let Some(u) = val.get("message").and_then(|m| m.get("usage")) {
+                usage.input_tokens += u.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                usage.output_tokens += u.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                usage.cache_read_tokens += u.get("cache_read_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                usage.cache_create_tokens += u.get("cache_creation_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+            }
+        }
+    }
+    if usage.total() > 0 { Some(usage) } else { None }
 }
 
 /// Start the hook HTTP server. Tries ports `port` through `port + 9`.

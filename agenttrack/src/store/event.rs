@@ -19,6 +19,10 @@ pub enum Event {
         messages: Vec<InboxMessage>,
     },
     ToolCall(ToolEvent),
+    TokenUpdate {
+        session_id: String,
+        usage: TokenUsage,
+    },
 }
 
 /// Immutable snapshot of all state, sent to the TUI and Web layers via `watch`.
