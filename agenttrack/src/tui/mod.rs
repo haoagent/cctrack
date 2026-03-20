@@ -144,42 +144,23 @@ pub fn render(frame: &mut Frame, snapshot: &StoreSnapshot, app: &AppState) {
     }
 
     // Status bar at the bottom
-    let current_team = snapshot.teams.get(app.selected_team_index).or(snapshot.teams.first());
-    render_status_bar(frame, areas.help_bar, current_team);
+    render_status_bar(frame, areas.help_bar);
 }
 
-/// Render the bottom status bar: branding + stats + keybindings.
-fn render_status_bar(frame: &mut Frame, area: ratatui::layout::Rect, team: Option<&crate::store::event::TeamSnapshot>) {
-    let mut spans = vec![
+/// Render the bottom status bar: branding + keybindings only.
+fn render_status_bar(frame: &mut Frame, area: ratatui::layout::Rect) {
+    let spans = vec![
         Span::styled(" cctrack", theme::title()),
-    ];
-
-    if let Some(t) = team {
-        let m = &t.metrics;
-        spans.extend_from_slice(&[
-            Span::styled(" \u{2500} ", theme::dim()),
-            Span::styled(format!("{}", m.total_agents), theme::status_style(&crate::store::models::AgentStatus::Active)),
-            Span::styled(" agents ", theme::dim()),
-            Span::styled(format!("{}/{}", m.completed_tasks, m.total_tasks), theme::task_status_style("in_progress")),
-            Span::styled(" tasks ", theme::dim()),
-            Span::styled(format!("{}", m.total_tool_calls), theme::tool_style("Bash")),
-            Span::styled(" events", theme::dim()),
-        ]);
-    }
-
-    spans.extend_from_slice(&[
-        Span::styled(" \u{2502} ", theme::border()), // │ separator
+        Span::styled(" \u{2502} ", theme::border()),
         Span::styled("Tab", Style::new().fg(Color::Cyan)),
-        Span::styled(" team ", theme::dim()),
+        Span::styled(" team  ", theme::dim()),
         Span::styled("\u{2190}\u{2192}", Style::new().fg(Color::Cyan)),
-        Span::styled(" agent ", theme::dim()),
-        Span::styled("j/k", Style::new().fg(Color::Cyan)),
-        Span::styled(" scroll ", theme::dim()),
+        Span::styled(" agent  ", theme::dim()),
         Span::styled("t", Style::new().fg(Color::Cyan)),
-        Span::styled(" theme ", theme::dim()),
+        Span::styled(" theme  ", theme::dim()),
         Span::styled("q", Style::new().fg(Color::Cyan)),
         Span::styled(" quit", theme::dim()),
-    ]);
+    ];
 
     let paragraph = Paragraph::new(Line::from(spans));
     frame.render_widget(paragraph, area);
