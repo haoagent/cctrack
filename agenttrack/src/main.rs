@@ -77,8 +77,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None => {}
     }
 
-    // Main monitoring mode
+    // Auto-install hooks on first run
     let claude_home = Config::claude_home();
+    if config.hooks.auto_install {
+        let _ = collector::hooks_installer::install_hooks(&claude_home, config.hooks.port);
+    }
+
+    // Main monitoring mode
     let (event_tx, event_rx) = tokio::sync::mpsc::channel(256);
     let (snapshot_tx, snapshot_rx) = tokio::sync::watch::channel(StoreSnapshot::default());
 
