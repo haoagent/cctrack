@@ -93,28 +93,42 @@ pub struct InboxMessage {
 }
 
 impl InboxMessage {
-    /// Classify the message into a MessageType based on the `type` field and content.
+    /// Classify the message into a MessageType.
+    ///
+    /// Claude Code stores idle/shutdown notifications in TWO possible ways:
+    /// 1. Top-level `"type": "idle_notification"` field (our msg_type)
+    /// 2. Embedded JSON inside the `"text"` field: `"text": "{\"type\":\"idle_notification\",...}"`
+    ///
+    /// We check both.
     pub fn classify_type(&self) -> MessageType {
-        match self.msg_type.as_deref() {
-            Some("idle_notification") => MessageType::IdleNotification,
-            Some("shutdown_notification") | Some("shutdown_request") => {
-                MessageType::ShutdownNotification
-            }
-            Some("plan_approval_request") => MessageType::PlanApproval,
-            Some("task_completed") => MessageType::TaskCompleted,
-            _ => {
-                // Check text content for patterns
-                if let Some(text) = &self.text {
-                    let lower = text.to_lowercase();
-                    if lower.starts_with("status: done") || lower.contains("task completed") {
-                        MessageType::TaskCompleted
-                    } else {
-                        MessageType::DirectMessage
+        // First: check top-level type field
+        if let Some(t) = self.msg_type.as_deref() {
+            return Self::classify_type_str(t);
+        }
+
+        // Second: try to parse text as JSON and check for embedded type
+        if let Some(text) = &self.text {
+            if text.starts_with('{') {
+                if let Ok(val) = serde_json::from_str::<serde_json::Value>(text) {
+                    if let Some(t) = val.get("type").and_then(|v| v.as_str()) {
+                        return Self::classify_type_str(t);
                     }
-                } else {
-                    MessageType::DirectMessage
                 }
             }
+        }
+
+        MessageType::DirectMessage
+    }
+
+    fn classify_type_str(type_str: &str) -> MessageType {
+        match type_str {
+            "idle_notification" => MessageType::IdleNotification,
+            "shutdown_notification" | "shutdown_request" | "shutdown_response" => {
+                MessageType::ShutdownNotification
+            }
+            "plan_approval_request" | "plan_approval_response" => MessageType::PlanApproval,
+            "task_completed" => MessageType::TaskCompleted,
+            _ => MessageType::DirectMessage,
         }
     }
 }

@@ -56,15 +56,13 @@ fn parse_inbox_with_mixed_message_types() {
     assert_eq!(dm.read, Some(false));
     assert_eq!(dm.color.as_deref(), Some("blue"));
     assert!(dm.msg_type.is_none());
-    // "Status: DONE" text triggers TaskCompleted classification
-    assert_eq!(dm.classify_type(), MessageType::TaskCompleted);
+    assert_eq!(dm.classify_type(), MessageType::DirectMessage);
 
-    // Second message: idle notification
+    // Second message: idle notification (embedded JSON in text field, matching real format)
     let idle = &messages[1];
-    assert_eq!(idle.msg_type.as_deref(), Some("idle_notification"));
     assert_eq!(idle.from.as_deref(), Some("brainstormer"));
-    assert_eq!(idle.idle_reason.as_deref(), Some("available"));
-    assert!(idle.text.is_none());
+    // In real Claude Code, idle_notification type is embedded inside the text field as JSON
+    assert!(idle.text.as_ref().unwrap().contains("idle_notification"));
     assert_eq!(idle.classify_type(), MessageType::IdleNotification);
 }
 

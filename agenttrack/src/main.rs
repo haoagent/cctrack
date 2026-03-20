@@ -102,15 +102,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.web.port
     };
 
-    // Start web if requested
-    if cli.web || cli.web_only {
-        let web_rx = snapshot_rx.clone();
-        tokio::spawn(web::run(web_port, web_rx));
-    }
+    // Always start web server in background
+    let web_rx = snapshot_rx.clone();
+    tokio::spawn(web::run(web_port, web_rx));
 
     // Start TUI (or wait if web-only)
     if cli.web_only {
-        println!("Web UI running at http://localhost:{web_port}");
+        println!("cctrack web UI: http://localhost:{web_port}");
         println!("Press Ctrl+C to stop.");
         tokio::signal::ctrl_c().await?;
     } else {
