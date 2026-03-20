@@ -150,7 +150,7 @@ pub fn render(frame: &mut Frame, snapshot: &StoreSnapshot, app: &AppState) {
 /// Render the bottom status bar: branding + keybindings only.
 fn render_status_bar(frame: &mut Frame, area: ratatui::layout::Rect) {
     let spans = vec![
-        Span::styled(" cctrack", theme::title()),
+        Span::styled(" cctrack@2026", theme::title()),
         Span::styled(" \u{2502} ", theme::border()),
         Span::styled("Tab", Style::new().fg(Color::Cyan)),
         Span::styled(" team  ", theme::dim()),
