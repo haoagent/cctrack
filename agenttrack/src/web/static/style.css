@@ -42,7 +42,7 @@ body {
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: 8px;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 
 .header h1 {
@@ -61,6 +61,61 @@ body {
 .header .stats .value {
   color: var(--text);
   font-weight: 600;
+}
+
+/* Tab bar */
+.tab-bar {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 12px;
+  padding: 0 4px;
+}
+
+.tab {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.tab:hover {
+  background: var(--bg-secondary);
+  color: var(--text);
+}
+
+.tab-selected {
+  background: var(--blue);
+  border-color: var(--blue);
+  color: #fff;
+}
+
+.tab-selected:hover {
+  background: var(--blue-bright);
+  color: #fff;
+}
+
+.tab-all.tab-selected {
+  background: #1e5a64;
+  border-color: #1e5a64;
+}
+
+.tab-all.tab-selected:hover {
+  background: #247a88;
+}
+
+.dot-active {
+  color: var(--green-bright);
+}
+
+.dot-idle {
+  color: var(--text-muted);
 }
 
 /* Grid layout */
@@ -183,8 +238,13 @@ tr:hover {
 .tool-edit { color: var(--yellow); }
 .tool-bash { color: var(--green-bright); }
 .tool-grep { color: var(--purple); }
+.tool-glob { color: var(--purple); }
 .tool-write { color: var(--cyan); }
 .tool-agent { color: var(--orange); }
+.tool-todowrite { color: var(--text-muted); }
+.tool-websearch { color: var(--blue-bright); }
+.tool-webfetch { color: var(--blue-bright); }
+.tool-skill { color: var(--cyan); }
 
 /* No data state */
 .empty-state {
@@ -208,4 +268,5 @@ tr:hover {
 /* Responsive */
 @media (max-width: 768px) {
   .grid { grid-template-columns: 1fr; }
+  .tab-bar { flex-wrap: wrap; }
 }

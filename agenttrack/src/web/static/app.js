@@ -3,16 +3,13 @@
   'use strict';
 
   const eventSource = new EventSource('/api/sse');
-  let reconnectTimer = null;
+  let selectedTeamIndex = 0; // 0 = ALL
+  let latestSnapshot = null;
 
   eventSource.onmessage = function(event) {
     try {
-      const snapshot = JSON.parse(event.data);
-      if (snapshot.teams && snapshot.teams.length > 0) {
-        renderTeam(snapshot.teams[0]);
-      } else {
-        renderEmpty();
-      }
+      latestSnapshot = JSON.parse(event.data);
+      renderAll();
     } catch (e) {
       console.error('Failed to parse SSE data:', e);
     }
@@ -22,15 +19,51 @@
     console.warn('SSE connection lost, reconnecting...');
   };
 
+  function renderAll() {
+    if (!latestSnapshot || !latestSnapshot.teams || latestSnapshot.teams.length === 0) {
+      renderEmpty();
+      return;
+    }
+    renderTabBar(latestSnapshot.teams);
+    var team = latestSnapshot.teams[selectedTeamIndex] || latestSnapshot.teams[0];
+    renderTeam(team);
+  }
+
+  function renderTabBar(teams) {
+    var bar = document.getElementById('tab-bar');
+    bar.innerHTML = teams.map(function(t, i) {
+      var isSelected = i === selectedTeamIndex;
+      var hasActive = t.agents && t.agents.some(function(a) { return a.status === 'Active'; });
+      var isAll = i === 0;
+      var cls = 'tab' + (isSelected ? ' tab-selected' : '') + (isAll ? ' tab-all' : '');
+      var dot = hasActive ? '\u25cf' : '\u25cb';
+      var dotCls = hasActive ? 'dot-active' : 'dot-idle';
+      return '<button class="' + cls + '" data-index="' + i + '">' +
+        '<span class="' + dotCls + '">' + dot + '</span> ' +
+        esc(t.name.toUpperCase()) +
+        '</button>';
+    }).join('');
+
+    // Bind click events
+    bar.querySelectorAll('.tab').forEach(function(btn) {
+      btn.onclick = function() {
+        selectedTeamIndex = parseInt(btn.dataset.index, 10);
+        renderAll();
+      };
+    });
+  }
+
   function renderTeam(team) {
     // Header stats
-    document.getElementById('team-name').textContent = team.name || '—';
     document.getElementById('agent-count').textContent = team.agents ? team.agents.length : 0;
 
-    const completed = team.tasks ? team.tasks.filter(t => t.status === 'completed').length : 0;
-    const total = team.tasks ? team.tasks.length : 0;
+    var completed = team.tasks ? team.tasks.filter(function(t) { return t.status === 'completed'; }).length : 0;
+    var total = team.tasks ? team.tasks.length : 0;
     document.getElementById('task-progress').textContent = completed + '/' + total;
     document.getElementById('event-count').textContent = team.tool_events ? team.tool_events.length : 0;
+
+    var costUsd = team.metrics ? team.metrics.estimated_cost_usd : 0;
+    document.getElementById('total-cost').textContent = '$' + costUsd.toFixed(2);
 
     renderAgents(team.agents || []);
     renderTasks(team.tasks || []);
@@ -39,17 +72,18 @@
   }
 
   function renderEmpty() {
-    document.getElementById('team-name').textContent = '—';
+    document.getElementById('tab-bar').innerHTML = '';
     document.getElementById('agent-count').textContent = '0';
     document.getElementById('task-progress').textContent = '0/0';
     document.getElementById('event-count').textContent = '0';
+    document.getElementById('total-cost').textContent = '$0.00';
     document.getElementById('agents-body').innerHTML = '';
     document.getElementById('agents-empty').style.display = 'block';
   }
 
   function renderAgents(agents) {
-    const tbody = document.getElementById('agents-body');
-    const empty = document.getElementById('agents-empty');
+    var tbody = document.getElementById('agents-body');
+    var empty = document.getElementById('agents-empty');
 
     if (agents.length === 0) {
       tbody.innerHTML = '';
@@ -59,23 +93,27 @@
     empty.style.display = 'none';
 
     tbody.innerHTML = agents.map(function(agent) {
-      const config = agent.config || agent;
-      const name = config.name || '—';
-      const model = shortenModel(config.model || '');
-      const status = agent.status || 'Unknown';
-      const statusClass = status.toLowerCase();
+      var name = agent.name || '\u2014';
+      var status = agent.status || 'Unknown';
+      var statusClass = status.toLowerCase();
+      var tokens = agent.tokens ? (agent.tokens.input_tokens + agent.tokens.output_tokens + agent.tokens.cache_read_tokens + agent.tokens.cache_create_tokens) : 0;
+      var tokensStr = tokens > 0 ? formatTokens(tokens) : '\u2014';
+      var cost = agent.tokens ? estimateCost(agent.tokens) : 0;
+      var costStr = cost > 0 ? '$' + cost.toFixed(2) : '\u2014';
+
       return '<tr>' +
         '<td>' + esc(name) + '</td>' +
-        '<td style="color:var(--text-muted)">' + esc(model) + '</td>' +
         '<td><span class="status-dot ' + statusClass + '"></span>' +
         '<span class="status-' + statusClass + '">' + esc(status) + '</span></td>' +
+        '<td style="color:var(--text-muted);text-align:right">' + tokensStr + '</td>' +
+        '<td style="color:var(--green-bright);text-align:right">' + costStr + '</td>' +
         '</tr>';
     }).join('');
   }
 
   function renderTasks(tasks) {
-    const tbody = document.getElementById('tasks-body');
-    const empty = document.getElementById('tasks-empty');
+    var tbody = document.getElementById('tasks-body');
+    var empty = document.getElementById('tasks-empty');
 
     if (tasks.length === 0) {
       tbody.innerHTML = '';
@@ -85,13 +123,13 @@
     empty.style.display = 'none';
 
     tbody.innerHTML = tasks.map(function(task) {
-      const id = task.id || '?';
-      const status = task.status || 'pending';
-      const subject = task.subject || '—';
-      const blocked = task.blocked_by && task.blocked_by.length > 0;
-      const displayStatus = blocked ? 'blocked' : status;
-      const symbol = taskSymbol(displayStatus);
-      const suffix = blocked ? ' (by #' + task.blocked_by.join(',#') + ')' : '';
+      var id = task.id || '?';
+      var status = task.status || 'pending';
+      var subject = task.subject || '\u2014';
+      var blocked = task.blocked_by && task.blocked_by.length > 0;
+      var displayStatus = blocked ? 'blocked' : status;
+      var symbol = taskSymbol(displayStatus);
+      var suffix = blocked ? ' (by #' + task.blocked_by.join(',#') + ')' : '';
 
       return '<tr>' +
         '<td>' + esc(id) + '</td>' +
@@ -102,8 +140,8 @@
   }
 
   function renderActivity(events) {
-    const feed = document.getElementById('activity-feed');
-    const empty = document.getElementById('activity-empty');
+    var feed = document.getElementById('activity-feed');
+    var empty = document.getElementById('activity-empty');
 
     if (events.length === 0) {
       feed.innerHTML = '';
@@ -112,33 +150,31 @@
     }
     empty.style.display = 'none';
 
-    // Show last 50 events
-    const recent = events.slice(-50);
+    // Show last 50 events, most recent first
+    var recent = events.slice(-50).reverse();
     feed.innerHTML = recent.map(function(ev) {
-      const time = formatTime(ev.timestamp);
-      const tool = ev.tool_name || '?';
-      const toolClass = 'tool-' + tool.toLowerCase();
-      const summary = ev.input_summary || '';
-      const agent = ev.agent_name || 'unknown';
+      var time = formatTime(ev.timestamp);
+      var tool = ev.tool_name || '?';
+      var toolClass = 'tool-' + tool.toLowerCase();
+      var summary = ev.summary || '';
+      var duration = ev.duration_ms ? ' ' + ev.duration_ms + 'ms' : '';
 
       return '<div class="feed-item">' +
         '<span class="time">' + esc(time) + '</span>' +
         '<span class="' + toolClass + '" style="min-width:50px">' + esc(tool) + '</span>' +
-        '<span style="color:var(--text-muted)">[' + esc(agent) + ']</span> ' +
-        '<span>' + esc(summary) + '</span>' +
+        '<span>' + esc(truncate(summary, 80)) + '</span>' +
+        '<span class="time">' + esc(duration) + '</span>' +
         '</div>';
     }).join('');
-
-    feed.scrollTop = feed.scrollHeight;
   }
 
   function renderMessages(messages) {
-    const feed = document.getElementById('messages-feed');
-    const empty = document.getElementById('messages-empty');
+    var feed = document.getElementById('messages-feed');
+    var empty = document.getElementById('messages-empty');
 
     // Filter out idle notifications
-    const filtered = messages.filter(function(m) {
-      return m.msg_type !== 'IdleNotification';
+    var filtered = messages.filter(function(m) {
+      return m.msg_type !== 'idle_notification';
     });
 
     if (filtered.length === 0) {
@@ -149,12 +185,12 @@
     empty.style.display = 'none';
 
     // Show last 50 messages
-    const recent = filtered.slice(-50);
+    var recent = filtered.slice(-50);
     feed.innerHTML = recent.map(function(msg) {
-      const time = formatTime(msg.timestamp);
-      const from = msg.from || '?';
-      const to = msg.to || '?';
-      const summary = msg.summary || msg.text || '';
+      var time = formatTime(msg.timestamp);
+      var from = msg.from || '?';
+      var to = msg.to || '?';
+      var summary = msg.summary || msg.text || '';
 
       return '<div class="feed-item">' +
         '<span class="time">' + esc(time) + '</span>' +
@@ -164,16 +200,20 @@
         '<span>' + esc(truncate(summary, 100)) + '</span>' +
         '</div>';
     }).join('');
-
-    feed.scrollTop = feed.scrollHeight;
   }
 
   // Helpers
-  function shortenModel(model) {
-    if (model.includes('opus')) return 'opus';
-    if (model.includes('sonnet')) return 'sonnet';
-    if (model.includes('haiku')) return 'haiku';
-    return model;
+  function formatTokens(n) {
+    if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+    if (n >= 1000) return (n / 1000).toFixed(0) + 'K';
+    return String(n);
+  }
+
+  function estimateCost(tokens) {
+    var input = (tokens.input_tokens + tokens.cache_create_tokens) / 1000000 * 15;
+    var output = tokens.output_tokens / 1000000 * 75;
+    var cache = tokens.cache_read_tokens / 1000000 * 1.5;
+    return input + output + cache;
   }
 
   function taskSymbol(status) {
@@ -189,7 +229,7 @@
   function formatTime(ts) {
     if (!ts) return '--:--:--';
     try {
-      const d = new Date(ts);
+      var d = new Date(ts);
       return d.toLocaleTimeString('en-US', { hour12: false });
     } catch (e) {
       return '--:--:--';

@@ -28,14 +28,22 @@ pub fn render(frame: &mut Frame, area: Rect, app: &AppState, snapshot: &StoreSna
                 || (app.selected_team_index >= snapshot.teams.len() && i == 0);
 
             let has_active = t.agents.iter().any(|a| a.status == AgentStatus::Active);
+            let is_all = i == 0; // First tab is always ALL
+
             let dot_char = if has_active { "\u{25cf}" } else { "\u{25cb}" }; // ● or ○
 
             if is_selected {
-                // Selected: solid bg + white bold text
-                let tab_bg = if theme::is_light_mode() {
+                let tab_bg = if is_all {
+                    // ALL tab: cyan-tinted bg to distinguish
+                    if theme::is_light_mode() {
+                        Color::Rgb(30, 60, 70)
+                    } else {
+                        Color::Rgb(30, 90, 100)
+                    }
+                } else if theme::is_light_mode() {
                     Color::Rgb(50, 50, 70)
                 } else {
-                    Color::Rgb(65, 105, 225) // royal blue — high contrast on dark
+                    Color::Rgb(65, 105, 225) // royal blue
                 };
                 let tab_style = Style::new()
                     .bg(tab_bg)
@@ -49,7 +57,6 @@ pub fn render(frame: &mut Frame, area: Rect, app: &AppState, snapshot: &StoreSna
                 spans.push(Span::styled(format!("{} ", dot_char), dot_style));
                 spans.push(Span::styled(format!("{} ", t.name.to_uppercase()), tab_style));
             } else {
-                // Inactive: no bg, dim text
                 let dot_style = if has_active {
                     Style::new().fg(Color::Rgb(158, 206, 106))
                 } else {

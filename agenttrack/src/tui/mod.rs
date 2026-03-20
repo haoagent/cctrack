@@ -62,7 +62,8 @@ pub async fn run_tui(
 
                 let agent_count = last_snapshot
                     .teams
-                    .first()
+                    .get(app.selected_team_index)
+                    .or(last_snapshot.teams.first())
                     .map(|t| t.agents.len())
                     .unwrap_or(0);
 

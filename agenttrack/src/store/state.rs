@@ -6,7 +6,6 @@ use super::event::{Event, StoreSnapshot, TeamSnapshot};
 use super::models::*;
 
 const TOOL_EVENT_RING_SIZE: usize = 500;
-const SOLO_TEAM_NAME: &str = "_solo";
 
 /// Internal per-team mutable state.
 #[derive(Debug)]
@@ -270,6 +269,30 @@ impl TeamState {
     }
 }
 
+/// An unregistered session (not part of any team).
+#[derive(Debug)]
+struct UnregisteredSession {
+    agent: Agent,
+    tool_events: Vec<ToolEvent>,
+}
+
+impl UnregisteredSession {
+    fn push_tool_event(&mut self, event: ToolEvent) {
+        if self.tool_events.len() >= TOOL_EVENT_RING_SIZE {
+            self.tool_events.remove(0);
+        }
+        self.tool_events.push(event);
+    }
+}
+
+/// Push to a global ring buffer.
+fn push_global_event(buf: &mut Vec<ToolEvent>, event: ToolEvent) {
+    if buf.len() >= TOOL_EVENT_RING_SIZE {
+        buf.remove(0);
+    }
+    buf.push(event);
+}
+
 /// The central state store. Processes events from the collector and emits
 /// immutable snapshots for the UI layers.
 pub struct Store;
@@ -282,6 +305,8 @@ impl Store {
         snapshot_tx: watch::Sender<StoreSnapshot>,
     ) {
         let mut teams: HashMap<String, TeamState> = HashMap::new();
+        let mut unregistered: Vec<UnregisteredSession> = Vec::new();
+        let mut global_events: Vec<ToolEvent> = Vec::new();
 
         while let Some(event) = rx.recv().await {
             match event {
@@ -297,7 +322,6 @@ impl Store {
                     if let Some(state) = teams.get_mut(&team_name) {
                         state.upsert_task(task);
                     } else {
-                        // Auto-create a minimal team state if we see tasks before config
                         let mut ts = TeamState::new(TeamConfig {
                             name: team_name.clone(),
                             description: String::new(),
@@ -320,52 +344,187 @@ impl Store {
                     }
                 }
                 Event::ToolCall(tool_event) => {
-                    let agent = &tool_event.agent_name;
+                    let session_id = &tool_event.agent_name;
                     let mut found = false;
 
-                    // Try to find matching team by agent name/id
+                    // 1. Match by agent name/id in existing teams
                     for state in teams.values_mut() {
-                        if state.agents.iter().any(|a| a.name == *agent || a.agent_id == *agent) {
+                        if state.agents.iter().any(|a| a.name == *session_id || a.agent_id == *session_id) {
                             state.push_tool_event(tool_event.clone());
                             found = true;
                             break;
                         }
                     }
 
+                    // 2. Match by lead_session_id
                     if !found {
-                        // Route to solo team — create it if needed
-                        let solo = teams.entry(SOLO_TEAM_NAME.to_string()).or_insert_with(|| {
-                            TeamState::new(TeamConfig {
-                                name: "solo".to_string(),
-                                description: "All Claude Code sessions".to_string(),
-                                created_at: None,
-                                lead_agent_id: None,
-                                lead_session_id: None,
-                                members: Vec::new(),
-                            })
-                        });
-                        solo.ensure_agent(agent, tool_event.cwd.as_deref(), tool_event.transcript_path.as_deref());
-                        solo.push_tool_event(tool_event);
+                        for state in teams.values_mut() {
+                            if state.config.lead_session_id.as_deref() == Some(session_id.as_str()) {
+                                state.ensure_agent(session_id, tool_event.cwd.as_deref(), tool_event.transcript_path.as_deref());
+                                state.push_tool_event(tool_event.clone());
+                                found = true;
+                                break;
+                            }
+                        }
                     }
+
+                    // 3. Route to unregistered sessions
+                    if !found {
+                        let existing = unregistered.iter_mut().find(|s| s.agent.agent_id == *session_id);
+                        if let Some(session) = existing {
+                            session.push_tool_event(tool_event.clone());
+                        } else {
+                            let base_name = tool_event.transcript_path.as_deref()
+                                .and_then(|p| crate::collector::hook_server::read_session_title(p))
+                                .or_else(|| {
+                                    tool_event.cwd.as_deref()
+                                        .and_then(|p| std::path::Path::new(p).file_name())
+                                        .and_then(|f| f.to_str())
+                                        .map(String::from)
+                                })
+                                .unwrap_or_else(|| {
+                                    if session_id.len() > 8 {
+                                        format!("session-{}", &session_id[..8])
+                                    } else {
+                                        session_id.to_string()
+                                    }
+                                });
+
+                            // Deduplicate name among unregistered + team agents
+                            let name_exists = |name: &str| {
+                                unregistered.iter().any(|s| s.agent.name == name)
+                                    || teams.values().any(|t| t.agents.iter().any(|a| a.name == name))
+                            };
+                            let display_name = if name_exists(&base_name) {
+                                let mut n = 2;
+                                loop {
+                                    let candidate = format!("{}-{}", base_name, n);
+                                    if !name_exists(&candidate) {
+                                        break candidate;
+                                    }
+                                    n += 1;
+                                }
+                            } else {
+                                base_name
+                            };
+
+                            let mut session = UnregisteredSession {
+                                agent: Agent {
+                                    name: display_name,
+                                    agent_id: session_id.to_string(),
+                                    agent_type: Some("session".to_string()),
+                                    model: None,
+                                    color: None,
+                                    status: AgentStatus::Active,
+                                    tokens: Default::default(),
+                                },
+                                tool_events: Vec::new(),
+                            };
+                            session.push_tool_event(tool_event.clone());
+                            unregistered.push(session);
+                        }
+                    }
+
+                    // Always push to global events
+                    push_global_event(&mut global_events, tool_event);
                 }
                 Event::TokenUpdate { session_id, usage } => {
-                    // Update agent token usage in whichever team contains this session
+                    let mut found = false;
+                    // Check teams (by agent_id/name or lead_session_id)
                     for state in teams.values_mut() {
                         if let Some(agent) = state.agents.iter_mut().find(|a| {
                             a.agent_id == session_id || a.name == session_id
                         }) {
                             agent.tokens = usage.clone();
+                            found = true;
                             break;
+                        }
+                        if state.config.lead_session_id.as_deref() == Some(&session_id) {
+                            if let Some(agent) = state.agents.iter_mut().find(|a| a.agent_id == session_id) {
+                                agent.tokens = usage.clone();
+                                found = true;
+                                break;
+                            }
+                        }
+                    }
+                    // Check unregistered sessions
+                    if !found {
+                        if let Some(session) = unregistered.iter_mut().find(|s| s.agent.agent_id == session_id) {
+                            session.agent.tokens = usage;
                         }
                     }
                 }
             }
 
-            // After each event, build and send a new snapshot
-            let snapshot = StoreSnapshot {
-                teams: teams.values().map(|ts| ts.snapshot()).collect(),
+            // Build ALL snapshot (aggregated view)
+            let all_agents: Vec<Agent> = teams.values()
+                .flat_map(|t| t.agents.clone())
+                .chain(unregistered.iter().map(|s| s.agent.clone()))
+                .collect();
+
+            let all_tasks: Vec<TaskFile> = teams.values()
+                .flat_map(|t| t.tasks.values().cloned())
+                .collect();
+
+            let all_messages: Vec<Message> = teams.values()
+                .flat_map(|t| t.messages.clone())
+                .collect();
+
+            let all_metrics = compute_all_metrics(&all_agents, &all_tasks, &all_messages, &global_events);
+
+            let all_snapshot = TeamSnapshot {
+                name: "all".to_string(),
+                description: "All sessions".to_string(),
+                agents: all_agents,
+                tasks: all_tasks,
+                messages: all_messages,
+                tool_events: global_events.clone(),
+                metrics: all_metrics,
             };
+
+            // Build per-team snapshots (sorted by name)
+            let mut team_snapshots: Vec<TeamSnapshot> = teams.values()
+                .map(|ts| ts.snapshot())
+                .collect();
+            team_snapshots.sort_by(|a, b| a.name.cmp(&b.name));
+
+            // Final: [ALL, team1, team2, ...]
+            let mut all_teams = vec![all_snapshot];
+            all_teams.extend(team_snapshots);
+
+            let snapshot = StoreSnapshot { teams: all_teams };
             let _ = snapshot_tx.send(snapshot);
         }
+    }
+}
+
+/// Compute aggregate metrics across all data.
+fn compute_all_metrics(agents: &[Agent], tasks: &[TaskFile], messages: &[Message], events: &[ToolEvent]) -> Metrics {
+    let total_agents = agents.len();
+    let active_agents = agents.iter().filter(|a| a.status == AgentStatus::Active).count();
+    let idle_agents = agents.iter().filter(|a| a.status == AgentStatus::Idle).count();
+
+    let total_tasks = tasks.len();
+    let completed_tasks = tasks.iter().filter(|t| t.status.as_deref() == Some("completed")).count();
+    let in_progress_tasks = tasks.iter().filter(|t| t.status.as_deref() == Some("in_progress")).count();
+    let pending_tasks = tasks.iter().filter(|t| t.status.as_deref() == Some("pending")).count();
+    let blocked_tasks = tasks.iter().filter(|t| !t.blocked_by.is_empty() && t.status.as_deref() != Some("completed")).count();
+
+    let total_tokens: u64 = agents.iter().map(|a| a.tokens.total()).sum();
+    let estimated_cost_usd: f64 = agents.iter().map(|a| a.tokens.estimated_cost_usd()).sum();
+
+    Metrics {
+        total_agents,
+        active_agents,
+        idle_agents,
+        total_tasks,
+        completed_tasks,
+        in_progress_tasks,
+        pending_tasks,
+        blocked_tasks,
+        total_messages: messages.len(),
+        total_tool_calls: events.len(),
+        total_tokens,
+        estimated_cost_usd,
     }
 }

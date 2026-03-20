@@ -28,6 +28,11 @@ fn make_team_config() -> TeamConfig {
     serde_json::from_str(json).expect("parse team config")
 }
 
+/// Find a team by name in the snapshot. teams[0] is always ALL.
+fn find_team<'a>(snap: &'a StoreSnapshot, name: &str) -> &'a cctrack::store::event::TeamSnapshot {
+    snap.teams.iter().find(|t| t.name == name).expect(&format!("team '{}' not found", name))
+}
+
 #[tokio::test]
 async fn team_update_creates_agents() {
     let config = make_team_config();
@@ -38,9 +43,10 @@ async fn team_update_creates_agents() {
     }])
     .await;
 
-    assert_eq!(snap.teams.len(), 1);
-    let team = &snap.teams[0];
-    assert_eq!(team.name, "my-project");
+    // teams[0] = ALL, teams[1] = my-project
+    assert_eq!(snap.teams.len(), 2);
+    assert_eq!(snap.teams[0].name, "all"); // ALL tab always first
+    let team = find_team(&snap, "my-project");
     assert_eq!(team.description, "Working on feature X");
     assert_eq!(team.agents.len(), 2);
 
@@ -82,7 +88,7 @@ async fn task_update_tracks_status() {
     ])
     .await;
 
-    let team = &snap.teams[0];
+    let team = find_team(&snap, "my-project");
     assert_eq!(team.tasks.len(), 2);
 
     let t1 = team.tasks.iter().find(|t| t.id == "1").unwrap();
@@ -118,7 +124,7 @@ async fn message_update_derives_to_field() {
     ])
     .await;
 
-    let team = &snap.teams[0];
+    let team = find_team(&snap, "my-project");
     assert_eq!(team.messages.len(), 1);
 
     let msg = &team.messages[0];
@@ -149,7 +155,7 @@ async fn idle_notification_updates_agent_status() {
     ])
     .await;
 
-    let team = &snap.teams[0];
+    let team = find_team(&snap, "my-project");
 
     // The brainstormer sent an idle_notification, so its status should be Idle
     let brainstormer = team
@@ -195,7 +201,7 @@ async fn metrics_computed_correctly() {
     ])
     .await;
 
-    let metrics = &snap.teams[0].metrics;
+    let metrics = &find_team(&snap, "my-project").metrics;
     assert_eq!(metrics.total_agents, 2);
     assert_eq!(metrics.idle_agents, 1); // brainstormer went idle
     assert_eq!(metrics.total_tasks, 2);

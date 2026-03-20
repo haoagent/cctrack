@@ -11,12 +11,14 @@
     <div class="header">
       <h1>cctrack</h1>
       <div class="stats">
-        <span>Team: <span class="value" id="team-name">—</span></span>
         <span>Agents: <span class="value" id="agent-count">0</span></span>
         <span>Tasks: <span class="value" id="task-progress">0/0</span></span>
         <span>Events: <span class="value" id="event-count">0</span></span>
+        <span>Cost: <span class="value" id="total-cost">$0.00</span></span>
       </div>
     </div>
+
+    <div class="tab-bar" id="tab-bar"></div>
 
     <div class="grid">
       <!-- Agents Panel -->
@@ -24,13 +26,13 @@
         <div class="panel-title">Agents</div>
         <table>
           <thead>
-            <tr><th>Name</th><th>Model</th><th>Status</th></tr>
+            <tr><th>Name</th><th>Status</th><th>Tokens</th><th>Cost</th></tr>
           </thead>
           <tbody id="agents-body"></tbody>
         </table>
         <div class="empty-state" id="agents-empty" style="display:none">
           <h2>No agents</h2>
-          <p>Start an agent team in Claude Code</p>
+          <p>Start a Claude Code session</p>
         </div>
       </div>
 

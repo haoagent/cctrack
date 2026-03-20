@@ -29,43 +29,42 @@ pub struct HookPayload {
     pub extra: HashMap<String, serde_json::Value>,
 }
 
+/// Extract just the filename from a path.
+fn shorten_path(full_path: &str) -> String {
+    std::path::Path::new(full_path)
+        .file_name()
+        .and_then(|f| f.to_str())
+        .unwrap_or(full_path)
+        .to_string()
+}
+
 /// Summarize the tool input into a short human-readable string.
 fn summarize_input(tool_name: &str, input: &serde_json::Value) -> String {
     match tool_name {
-        "Read" => {
-            if let Some(fp) = input.get("file_path").and_then(|v| v.as_str()) {
-                // Extract just the filename
-                std::path::Path::new(fp)
-                    .file_name()
-                    .and_then(|f| f.to_str())
-                    .unwrap_or(fp)
-                    .to_string()
-            } else {
-                "Read".to_string()
-            }
-        }
-        "Edit" | "Write" => input
+        "Read" => input
             .get("file_path")
             .and_then(|v| v.as_str())
-            .unwrap_or(tool_name)
-            .to_string(),
-        "Bash" => {
-            let cmd = input
-                .get("command")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            let truncated: String = cmd.chars().take(80).collect();
-            if truncated.is_empty() {
-                "Bash".to_string()
-            } else {
-                truncated
+            .map(shorten_path)
+            .unwrap_or_else(|| "Read".to_string()),
+        "Edit" => {
+            let file = input.get("file_path").and_then(|v| v.as_str()).map(shorten_path);
+            match file {
+                Some(f) => f,
+                None => "Edit".to_string(),
             }
         }
+        "Write" => input
+            .get("file_path")
+            .and_then(|v| v.as_str())
+            .map(shorten_path)
+            .unwrap_or_else(|| "Write".to_string()),
+        "Bash" => {
+            let cmd = input.get("command").and_then(|v| v.as_str()).unwrap_or("");
+            let truncated: String = cmd.chars().take(80).collect();
+            if truncated.is_empty() { "Bash".to_string() } else { truncated }
+        }
         "Grep" => {
-            let pattern = input
-                .get("pattern")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let pattern = input.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
             let path = input.get("path").and_then(|v| v.as_str()).unwrap_or("");
             if pattern.is_empty() && path.is_empty() {
                 "Grep".to_string()
@@ -73,11 +72,49 @@ fn summarize_input(tool_name: &str, input: &serde_json::Value) -> String {
                 format!("{} {}", pattern, path).trim().to_string()
             }
         }
+        "Glob" => {
+            let pattern = input.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
+            let path = input.get("path").and_then(|v| v.as_str()).unwrap_or("");
+            if pattern.is_empty() {
+                "Glob".to_string()
+            } else if path.is_empty() {
+                pattern.to_string()
+            } else {
+                format!("{} in {}", pattern, shorten_path(path))
+            }
+        }
         "Agent" => input
             .get("description")
             .and_then(|v| v.as_str())
             .unwrap_or("subagent")
             .to_string(),
+        "TodoWrite" => {
+            let count = input.get("todos")
+                .and_then(|v| v.as_array())
+                .map(|a| a.len())
+                .unwrap_or(0);
+            format!("{} items", count)
+        }
+        "WebSearch" => input
+            .get("query")
+            .and_then(|v| v.as_str())
+            .unwrap_or("search")
+            .chars().take(60).collect(),
+        "WebFetch" => input
+            .get("url")
+            .and_then(|v| v.as_str())
+            .unwrap_or("fetch")
+            .chars().take(60).collect(),
+        "Skill" => input
+            .get("skill")
+            .and_then(|v| v.as_str())
+            .unwrap_or("skill")
+            .to_string(),
+        "NotebookEdit" => input
+            .get("notebook_path")
+            .and_then(|v| v.as_str())
+            .map(shorten_path)
+            .unwrap_or_else(|| "notebook".to_string()),
         _ => tool_name.to_string(),
     }
 }
@@ -219,7 +256,7 @@ mod tests {
     #[test]
     fn summarize_edit() {
         let input = serde_json::json!({"file_path": "/home/user/foo.rs"});
-        assert_eq!(summarize_input("Edit", &input), "/home/user/foo.rs");
+        assert_eq!(summarize_input("Edit", &input), "foo.rs");
     }
 
     #[test]
