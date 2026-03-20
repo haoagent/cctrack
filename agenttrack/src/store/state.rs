@@ -307,6 +307,8 @@ impl Store {
         let mut teams: HashMap<String, TeamState> = HashMap::new();
         let mut unregistered: Vec<UnregisteredSession> = Vec::new();
         let mut global_events: Vec<ToolEvent> = Vec::new();
+        // Track every session that has sent events (session_id → Agent info)
+        let mut all_sessions: HashMap<String, Agent> = HashMap::new();
 
         while let Some(event) = rx.recv().await {
             match event {
@@ -341,6 +343,12 @@ impl Store {
                 } => {
                     if let Some(state) = teams.get_mut(&team_name) {
                         state.process_messages(&agent_name, messages);
+                        // Sync agent status changes to all_sessions
+                        for agent in &state.agents {
+                            if let Some(s) = all_sessions.get_mut(&agent.agent_id) {
+                                s.status = agent.status.clone();
+                            }
+                        }
                     }
                 }
                 Event::ToolCall(tool_event) => {
@@ -425,6 +433,19 @@ impl Store {
                         }
                     }
 
+                    // Track this session in all_sessions
+                    if !all_sessions.contains_key(session_id) {
+                        // Find the agent info: either from a team or from unregistered
+                        let agent_info = teams.values()
+                            .flat_map(|t| t.agents.iter())
+                            .find(|a| a.agent_id == *session_id || a.name == *session_id)
+                            .cloned()
+                            .or_else(|| unregistered.iter().find(|s| s.agent.agent_id == *session_id).map(|s| s.agent.clone()));
+                        if let Some(agent) = agent_info {
+                            all_sessions.insert(session_id.to_string(), agent);
+                        }
+                    }
+
                     // Always push to global events
                     push_global_event(&mut global_events, tool_event);
                 }
@@ -450,17 +471,18 @@ impl Store {
                     // Check unregistered sessions
                     if !found {
                         if let Some(session) = unregistered.iter_mut().find(|s| s.agent.agent_id == session_id) {
-                            session.agent.tokens = usage;
+                            session.agent.tokens = usage.clone();
                         }
+                    }
+                    // Sync to all_sessions
+                    if let Some(s) = all_sessions.get_mut(&session_id) {
+                        s.tokens = usage;
                     }
                 }
             }
 
-            // Build ALL snapshot (aggregated view)
-            let all_agents: Vec<Agent> = teams.values()
-                .flat_map(|t| t.agents.clone())
-                .chain(unregistered.iter().map(|s| s.agent.clone()))
-                .collect();
+            // Build ALL snapshot — only sessions that have actually sent events
+            let all_agents: Vec<Agent> = all_sessions.values().cloned().collect();
 
             let all_tasks: Vec<TaskFile> = teams.values()
                 .flat_map(|t| t.tasks.values().cloned())
