@@ -28,7 +28,7 @@ pub fn build_layout(area: Rect) -> LayoutAreas {
             Constraint::Percentage(40),   // upper half (agents + tasks)
             Constraint::Percentage(30),   // activity
             Constraint::Min(3),           // messages (fills remaining)
-            Constraint::Length(2),        // help_bar (content + blank bottom)
+            Constraint::Length(2),        // help_bar (content + blank)
         ])
         .split(area);
 
