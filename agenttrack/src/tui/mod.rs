@@ -128,44 +128,59 @@ pub fn render(frame: &mut Frame, snapshot: &StoreSnapshot, app: &AppState) {
 
     let areas = layout::build_layout(frame.area());
 
+    // Top tab bar (always visible)
+    top_bar::render(frame, areas.top_bar, app, snapshot);
+
     if let Some(team) = snapshot.teams.get(app.selected_team_index).or(snapshot.teams.first()) {
-        // Render all panels for the first team
-        top_bar::render(frame, areas.top_bar, team, app, snapshot);
         agents_panel::render(frame, areas.agents, team, app);
         tasks_panel::render(frame, areas.tasks, team, app);
         activity_panel::render(frame, areas.activity, team, app);
         messages_panel::render(frame, areas.messages, team, app);
     } else {
-        // No teams found -- centered placeholder
-        let placeholder = Paragraph::new("No teams found")
+        let placeholder = Paragraph::new("Waiting for sessions...")
             .style(theme::dim())
             .alignment(Alignment::Center);
         frame.render_widget(placeholder, areas.activity);
     }
 
-    // Help bar at the bottom (always visible)
-    render_help_bar(frame, areas.help_bar, app);
+    // Status bar at the bottom
+    let current_team = snapshot.teams.get(app.selected_team_index).or(snapshot.teams.first());
+    render_status_bar(frame, areas.help_bar, current_team);
 }
 
-/// Render the single-line help bar at the very bottom.
-fn render_help_bar(frame: &mut Frame, area: ratatui::layout::Rect, _app: &AppState) {
-    let help = Line::from(vec![
-        Span::styled(" Tab", Style::new().fg(Color::Cyan)),
+/// Render the bottom status bar: branding + stats + keybindings.
+fn render_status_bar(frame: &mut Frame, area: ratatui::layout::Rect, team: Option<&crate::store::event::TeamSnapshot>) {
+    let mut spans = vec![
+        Span::styled(" cctrack", theme::title()),
+    ];
+
+    if let Some(t) = team {
+        let m = &t.metrics;
+        spans.extend_from_slice(&[
+            Span::styled(" \u{2500} ", theme::dim()),
+            Span::styled(format!("{}", m.total_agents), theme::status_style(&crate::store::models::AgentStatus::Active)),
+            Span::styled(" agents ", theme::dim()),
+            Span::styled(format!("{}/{}", m.completed_tasks, m.total_tasks), theme::task_status_style("in_progress")),
+            Span::styled(" tasks ", theme::dim()),
+            Span::styled(format!("{}", m.total_tool_calls), theme::tool_style("Bash")),
+            Span::styled(" events", theme::dim()),
+        ]);
+    }
+
+    spans.extend_from_slice(&[
+        Span::styled(" \u{2502} ", theme::border()), // │ separator
+        Span::styled("Tab", Style::new().fg(Color::Cyan)),
         Span::styled(" team ", theme::dim()),
-        Span::styled("1-4", Style::new().fg(Color::Cyan)),
-        Span::styled(" panel ", theme::dim()),
         Span::styled("\u{2190}\u{2192}", Style::new().fg(Color::Cyan)),
         Span::styled(" agent ", theme::dim()),
         Span::styled("j/k", Style::new().fg(Color::Cyan)),
         Span::styled(" scroll ", theme::dim()),
-        Span::styled("q", Style::new().fg(Color::Cyan)),
-        Span::styled(" quit ", theme::dim()),
         Span::styled("t", Style::new().fg(Color::Cyan)),
         Span::styled(" theme ", theme::dim()),
-        Span::styled("?", Style::new().fg(Color::Cyan)),
-        Span::styled(" help", theme::dim()),
+        Span::styled("q", Style::new().fg(Color::Cyan)),
+        Span::styled(" quit", theme::dim()),
     ]);
 
-    let paragraph = Paragraph::new(help);
+    let paragraph = Paragraph::new(Line::from(spans));
     frame.render_widget(paragraph, area);
 }
