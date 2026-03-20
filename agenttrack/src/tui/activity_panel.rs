@@ -89,9 +89,24 @@ pub fn render(frame: &mut Frame, area: Rect, team: &TeamSnapshot, app: &AppState
                     }
                 };
 
+                // Show agent name if multiple agents (solo or team view)
+                let agent_label = if team.agents.len() > 1 {
+                    // Use cwd-based short name or truncated agent_name
+                    let short = evt.cwd.as_deref()
+                        .and_then(|p| std::path::Path::new(p).file_name())
+                        .and_then(|f| f.to_str())
+                        .unwrap_or_else(|| {
+                            if evt.agent_name.len() > 10 { &evt.agent_name[..10] } else { &evt.agent_name }
+                        });
+                    format!("{} ", short)
+                } else {
+                    String::new()
+                };
+
                 let line = Line::from(vec![
                     Span::styled(time, theme::dim()),
                     Span::raw(" "),
+                    Span::styled(agent_label, theme::status_style(&crate::store::models::AgentStatus::Active)),
                     Span::styled(format!("{:<6}", evt.tool_name), tool_sty),
                     Span::styled(summary_text, theme::text()),
                     Span::styled(duration, theme::dim()),
