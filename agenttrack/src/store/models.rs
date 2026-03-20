@@ -236,6 +236,8 @@ pub struct ToolEvent {
     pub success: Option<bool>,
     #[serde(default)]
     pub cwd: Option<String>,
+    #[serde(default)]
+    pub transcript_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

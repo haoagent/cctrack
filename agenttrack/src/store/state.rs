@@ -150,16 +150,20 @@ impl TeamState {
         }
     }
 
-    /// Ensure a session is registered as an agent. Uses cwd for display name if available.
-    fn ensure_agent(&mut self, session_id: &str, cwd: Option<&str>) -> bool {
+    /// Ensure a session is registered as an agent.
+    /// Priority: transcript title > cwd dir name > truncated session_id
+    fn ensure_agent(&mut self, session_id: &str, cwd: Option<&str>, transcript_path: Option<&str>) -> bool {
         if self.agents.iter().any(|a| a.agent_id == session_id || a.name == session_id) {
             return false;
         }
-        // Use last component of cwd as display name, fallback to truncated session_id
-        let base_name = cwd
-            .and_then(|p| std::path::Path::new(p).file_name())
-            .and_then(|f| f.to_str())
-            .map(String::from)
+        // Priority: transcript title > cwd dir name > truncated session_id
+        let base_name = transcript_path
+            .and_then(|p| crate::collector::hook_server::read_session_title(p))
+            .or_else(|| {
+                cwd.and_then(|p| std::path::Path::new(p).file_name())
+                    .and_then(|f| f.to_str())
+                    .map(String::from)
+            })
             .unwrap_or_else(|| {
                 if session_id.len() > 8 {
                     format!("session-{}", &session_id[..8])
@@ -340,7 +344,7 @@ impl Store {
                                 members: Vec::new(),
                             })
                         });
-                        solo.ensure_agent(agent, tool_event.cwd.as_deref());
+                        solo.ensure_agent(agent, tool_event.cwd.as_deref(), tool_event.transcript_path.as_deref());
                         solo.push_tool_event(tool_event);
                     }
                 }

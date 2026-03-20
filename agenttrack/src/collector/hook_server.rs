@@ -99,6 +99,7 @@ async fn handle_hook(
     let session_id = payload.session_id;
 
     let cwd = payload.extra.get("cwd").and_then(|v| v.as_str()).map(String::from);
+    let transcript_path = payload.extra.get("transcript_path").and_then(|v| v.as_str()).map(String::from);
 
     let tool_event = ToolEvent {
         agent_name: session_id.clone(),
@@ -112,13 +113,14 @@ async fn handle_hook(
         },
         success: None,
         cwd,
+        transcript_path: transcript_path.clone(),
     };
 
     let _ = state.event_tx.send(Event::ToolCall(tool_event)).await;
 
     // Parse transcript for token usage (best-effort, async)
-    if let Some(tp) = payload.extra.get("transcript_path").and_then(|v| v.as_str()) {
-        let transcript_path = tp.to_string();
+    if let Some(ref tp) = transcript_path {
+        let transcript_path = tp.clone();
         let tx = state.event_tx.clone();
         tokio::spawn(async move {
             if let Some(usage) = read_transcript_usage(&transcript_path) {
@@ -128,6 +130,28 @@ async fn handle_hook(
     }
 
     StatusCode::OK
+}
+
+/// Read session title from transcript first line (queue-operation content).
+/// Truncates to 30 chars for display.
+pub fn read_session_title(path: &str) -> Option<String> {
+    let file = std::fs::File::open(path).ok()?;
+    let reader = std::io::BufReader::new(file);
+    use std::io::BufRead;
+    for line in reader.lines().take(5) {
+        let line = line.ok()?;
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&line) {
+            if val.get("type").and_then(|v| v.as_str()) == Some("queue-operation") {
+                if let Some(content) = val.get("content").and_then(|v| v.as_str()) {
+                    let title: String = content.chars().take(30).collect();
+                    if !title.is_empty() {
+                        return Some(title);
+                    }
+                }
+            }
+        }
+    }
+    None
 }
 
 /// Read a transcript .jsonl file and sum all token usage.
