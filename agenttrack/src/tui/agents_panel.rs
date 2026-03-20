@@ -2,7 +2,7 @@ use ratatui::{
     Frame,
     layout::{Constraint, Rect},
     text::Span,
-    widgets::{Block, Borders, Cell, Row, Table, TableState},
+    widgets::{Block, Borders, Cell, Row, Table},
 };
 
 use crate::store::event::TeamSnapshot;
@@ -30,7 +30,7 @@ fn short_model(model: &str) -> &str {
 
 /// Render the agents table.
 pub fn render(frame: &mut Frame, area: Rect, team: &TeamSnapshot, app: &AppState) {
-    let is_focused = app.active_panel == Panel::Agents;
+    let _is_focused = app.active_panel == Panel::Agents;
 
     // Header row
     let header = Row::new(vec![
@@ -68,16 +68,10 @@ pub fn render(frame: &mut Frame, area: Rect, team: &TeamSnapshot, app: &AppState
         })
         .collect();
 
-    let border_style = if is_focused {
-        ratatui::style::Style::new().fg(ratatui::style::Color::Cyan)
-    } else {
-        theme::border()
-    };
-
     let block = Block::default()
         .title(Span::styled(" Agents ", theme::title()))
         .borders(Borders::ALL)
-        .border_style(border_style);
+        .border_style(theme::border());
 
     let widths = [
         Constraint::Percentage(40),
@@ -87,13 +81,7 @@ pub fn render(frame: &mut Frame, area: Rect, team: &TeamSnapshot, app: &AppState
 
     let table = Table::new(rows, widths)
         .header(header)
-        .block(block)
-        .row_highlight_style(theme::SELECTED);
+        .block(block);
 
-    let mut state = TableState::default();
-    if is_focused {
-        state.select(Some(app.selected_rows[Panel::Agents as usize]));
-    }
-
-    frame.render_stateful_widget(table, area, &mut state);
+    frame.render_widget(table, area);
 }

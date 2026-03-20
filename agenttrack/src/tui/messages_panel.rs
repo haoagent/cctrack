@@ -3,7 +3,7 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, ListState},
+    widgets::{Block, Borders, List, ListItem},
 };
 
 use crate::store::event::TeamSnapshot;
@@ -28,7 +28,7 @@ fn extract_time(ts: &str) -> &str {
 
 /// Render the messages panel.
 pub fn render(frame: &mut Frame, area: Rect, team: &TeamSnapshot, app: &AppState) {
-    let is_focused = app.active_panel == Panel::Messages;
+    let _is_focused = app.active_panel == Panel::Messages;
 
     // Filter out IdleNotification messages
     let filtered: Vec<_> = team
@@ -84,25 +84,12 @@ pub fn render(frame: &mut Frame, area: Rect, team: &TeamSnapshot, app: &AppState
             .collect()
     };
 
-    let border_style = if is_focused {
-        ratatui::style::Style::new().fg(ratatui::style::Color::Cyan)
-    } else {
-        theme::border()
-    };
-
     let block = Block::default()
         .title(Span::styled(" Messages ", theme::title()))
         .borders(Borders::ALL)
-        .border_style(border_style);
+        .border_style(theme::border());
 
-    let list = List::new(items)
-        .block(block)
-        .highlight_style(theme::SELECTED);
+    let list = List::new(items).block(block);
 
-    let mut state = ListState::default();
-    if is_focused {
-        state.select(Some(app.selected_rows[Panel::Messages as usize]));
-    }
-
-    frame.render_stateful_widget(list, area, &mut state);
+    frame.render_widget(list, area);
 }
