@@ -24,7 +24,7 @@ pub fn build_layout(area: Rect) -> LayoutAreas {
     let vertical = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),        // top_bar
+            Constraint::Length(2),        // top_bar (1 blank + 1 tabs)
             Constraint::Percentage(40),   // upper half (agents + tasks)
             Constraint::Percentage(30),   // activity
             Constraint::Min(3),           // messages (fills remaining)
