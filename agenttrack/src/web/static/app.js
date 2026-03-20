@@ -1,4 +1,4 @@
-// AgentTrack Web Dashboard — SSE Client
+// cctrack Web Dashboard — SSE Client
 (function() {
   'use strict';
 

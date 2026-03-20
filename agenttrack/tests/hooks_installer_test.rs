@@ -1,4 +1,4 @@
-use agenttrack::collector::hooks_installer::{install_hooks, uninstall_hooks};
+use cctrack::collector::hooks_installer::{install_hooks, uninstall_hooks};
 use std::fs;
 use tempfile::TempDir;
 
@@ -109,7 +109,7 @@ fn install_creates_backup() {
     install_hooks(claude_home, 7893).expect("install should succeed");
 
     // Verify backup file was created with original content
-    let backup_path = claude_home.join("settings.json.agenttrack-backup");
+    let backup_path = claude_home.join("settings.json.cctrack-backup");
     assert!(backup_path.exists(), "backup file should be created");
 
     let backup_contents = fs::read_to_string(&backup_path).unwrap();

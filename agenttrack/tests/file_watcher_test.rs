@@ -1,8 +1,8 @@
 use std::fs;
 use tempfile::TempDir;
 use tokio::sync::mpsc;
-use agenttrack::collector::file_watcher;
-use agenttrack::store::event::Event;
+use cctrack::collector::file_watcher;
+use cctrack::store::event::Event;
 
 #[tokio::test]
 async fn discovers_existing_team_on_startup() {

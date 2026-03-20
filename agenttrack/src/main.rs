@@ -1,10 +1,10 @@
 use clap::Parser;
 
-use agenttrack::{collector, config::Config, store, tui, web};
+use cctrack::{collector, config::Config, store, tui, web};
 use store::event::StoreSnapshot;
 
 #[derive(Parser)]
-#[command(name = "agenttrack", version, about = "Real-time observability for Claude Code agent teams")]
+#[command(name = "cctrack", version, about = "Real-time observability for Claude Code agent teams")]
 struct Cli {
     /// Monitor a specific team
     #[arg(long)]

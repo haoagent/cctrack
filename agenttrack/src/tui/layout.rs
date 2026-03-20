@@ -10,7 +10,7 @@ pub struct LayoutAreas {
     pub help_bar: Rect,
 }
 
-/// Divide `area` into the standard AgentTrack layout.
+/// Divide `area` into the standard cctrack layout.
 ///
 /// ```text
 /// ┌─────────────── top_bar (3 rows) ───────────────┐

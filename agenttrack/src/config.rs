@@ -108,5 +108,5 @@ impl Config {
 }
 
 fn config_path() -> Option<PathBuf> {
-    dirs::home_dir().map(|h| h.join(".agenttrack/config.toml"))
+    dirs::home_dir().map(|h| h.join(".cctrack/config.toml"))
 }

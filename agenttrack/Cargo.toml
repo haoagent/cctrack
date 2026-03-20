@@ -1,5 +1,5 @@
 [package]
-name = "agenttrack"
+name = "cctrack"
 version = "0.1.0"
 edition = "2021"
 description = "Real-time observability dashboard for Claude Code agent teams"

@@ -1,13 +1,13 @@
 use std::fs;
 use std::path::Path;
 
-/// Install the AgentTrack PostToolUse hook into Claude Code's settings.json.
+/// Install the cctrack PostToolUse hook into Claude Code's settings.json.
 ///
 /// 1. Read `claude_home/settings.json` (create `{}` if missing)
-/// 2. Backup to `claude_home/settings.json.agenttrack-backup`
+/// 2. Backup to `claude_home/settings.json.cctrack-backup`
 /// 3. Parse as serde_json::Value
 /// 4. Navigate to hooks.PostToolUse (create path if missing)
-/// 5. Check if our entry already exists (command contains our port or "agenttrack")
+/// 5. Check if our entry already exists (command contains our port or "cctrack")
 /// 6. If not present, append our entry
 /// 7. Pretty-print and write back
 pub fn install_hooks(claude_home: &Path, hook_port: u16) -> Result<(), String> {
@@ -27,7 +27,7 @@ pub fn install_hooks(claude_home: &Path, hook_port: u16) -> Result<(), String> {
     };
 
     // Backup
-    let backup_path = claude_home.join("settings.json.agenttrack-backup");
+    let backup_path = claude_home.join("settings.json.cctrack-backup");
     fs::write(&backup_path, &contents)
         .map_err(|e| format!("Failed to write backup: {}", e))?;
 
@@ -56,7 +56,7 @@ pub fn install_hooks(claude_home: &Path, hook_port: u16) -> Result<(), String> {
     let our_marker = format!("localhost:{}/hook", hook_port);
     let already_installed = post_tool_use.iter().any(|entry| {
         if let Some(cmd) = entry.get("command").and_then(|v| v.as_str()) {
-            cmd.contains(&our_marker) || cmd.contains("agenttrack")
+            cmd.contains(&our_marker) || cmd.contains("cctrack")
         } else {
             false
         }
@@ -84,7 +84,7 @@ pub fn install_hooks(claude_home: &Path, hook_port: u16) -> Result<(), String> {
     Ok(())
 }
 
-/// Remove AgentTrack PostToolUse hooks from Claude Code's settings.json.
+/// Remove cctrack PostToolUse hooks from Claude Code's settings.json.
 ///
 /// Removes entries whose command contains "localhost:78XX/hook" (ports 7890-7899).
 pub fn uninstall_hooks(claude_home: &Path) -> Result<(), String> {
@@ -106,7 +106,7 @@ pub fn uninstall_hooks(claude_home: &Path) -> Result<(), String> {
             if let Some(arr) = post_tool_use.as_array_mut() {
                 arr.retain(|entry| {
                     if let Some(cmd) = entry.get("command").and_then(|v| v.as_str()) {
-                        // Remove entries matching our port range or containing "agenttrack"
+                        // Remove entries matching our port range or containing "cctrack"
                         let is_ours = (7890..=7899).any(|port| {
                             cmd.contains(&format!("localhost:{}/hook", port))
                         });

@@ -1,5 +1,5 @@
-use agenttrack::collector::hook_server;
-use agenttrack::store::event::Event;
+use cctrack::collector::hook_server;
+use cctrack::store::event::Event;
 use tokio::sync::mpsc;
 
 #[tokio::test]

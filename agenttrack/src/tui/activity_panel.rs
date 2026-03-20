@@ -63,7 +63,7 @@ pub fn render(frame: &mut Frame, area: Rect, team: &TeamSnapshot, app: &AppState
 
     let items: Vec<ListItem> = if events.is_empty() {
         vec![ListItem::new(Line::from(vec![Span::styled(
-            "  Enable hooks: agenttrack hooks install",
+            "  Enable hooks: cctrack hooks install",
             Style::new().fg(Color::DarkGray),
         )]))]
     } else {

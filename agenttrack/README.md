@@ -1,8 +1,8 @@
-# AgentTrack
+# cctrack
 
 Real-time observability dashboard for [Claude Code](https://claude.ai/code) agent teams.
 
-**See what your agents are doing.** When you run Claude Code agent teams (TeamCreate, SendMessage, TaskCreate), AgentTrack gives you a live view of all agent activity, task progress, message flow, and metrics — in your terminal or browser.
+**See what your agents are doing.** When you run Claude Code agent teams (TeamCreate, SendMessage, TaskCreate), cctrack gives you a live view of all agent activity, task progress, message flow, and metrics — in your terminal or browser.
 
 ## Features
 
@@ -21,38 +21,38 @@ cargo install --path .
 
 # Or build locally
 cargo build --release
-./target/release/agenttrack
+./target/release/cctrack
 ```
 
 ## Usage
 
 ```bash
 # Auto-discover active teams and start TUI
-agenttrack
+cctrack
 
 # Monitor a specific team
-agenttrack --team my-project
+cctrack --team my-project
 
 # Also start web dashboard
-agenttrack --web
+cctrack --web
 
 # Web dashboard only (no TUI)
-agenttrack --web-only --port 7891
+cctrack --web-only --port 7891
 
 # Enable live tool call tracking (recommended)
-agenttrack hooks install
+cctrack hooks install
 
 # Remove hooks
-agenttrack hooks uninstall
+cctrack hooks uninstall
 ```
 
 ## How It Works
 
-AgentTrack runs as an **independent process** alongside Claude Code. It watches the JSON files that Claude Code writes to `~/.claude/teams/` and `~/.claude/tasks/`, and optionally receives tool call events via hooks.
+cctrack runs as an **independent process** alongside Claude Code. It watches the JSON files that Claude Code writes to `~/.claude/teams/` and `~/.claude/tasks/`, and optionally receives tool call events via hooks.
 
 ```
 ┌──────────────────────┐  ┌───────────────────────┐
-│  Claude Code          │  │  AgentTrack            │
+│  Claude Code          │  │  cctrack                │
 │  (agent team running) │  │  (separate terminal)   │
 │                       │  │                        │
 │  Writes JSON to ──────┼──┼──> Watches JSON files  │
@@ -63,7 +63,7 @@ AgentTrack runs as an **independent process** alongside Claude Code. It watches 
 
 ## Configuration
 
-Optional config at `~/.agenttrack/config.toml`:
+Optional config at `~/.cctrack/config.toml`:
 
 ```toml
 version = 1

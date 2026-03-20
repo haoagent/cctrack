@@ -13,14 +13,14 @@ use super::theme;
 /// Render the top status bar.
 ///
 /// ```text
-/// AgentTrack -- team: {name} -- {n} agents -- {completed}/{total} tasks -- {events} events
+/// cctrack -- team: {name} -- {n} agents -- {completed}/{total} tasks -- {events} events
 /// ```
 pub fn render(frame: &mut Frame, area: Rect, team: &TeamSnapshot, _app: &AppState) {
     let m = &team.metrics;
 
     let spans = vec![
         Span::styled(
-            " AgentTrack",
+            " cctrack",
             Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD),
         ),
         Span::styled(" \u{2500} ", Style::new().fg(Color::DarkGray)),

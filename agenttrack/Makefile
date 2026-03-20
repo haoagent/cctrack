@@ -13,8 +13,8 @@ run:
 
 release:
 	$(CARGO) build --release
-	@ls -lh target/release/agenttrack
-	@echo "Binary size: $$(du -h target/release/agenttrack | cut -f1)"
+	@ls -lh target/release/cctrack
+	@echo "Binary size: $$(du -h target/release/cctrack | cut -f1)"
 
 clean:
 	$(CARGO) clean

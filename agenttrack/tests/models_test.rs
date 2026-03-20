@@ -1,4 +1,4 @@
-use agenttrack::store::models::*;
+use cctrack::store::models::*;
 
 #[test]
 fn parse_team_config() {
