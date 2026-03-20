@@ -33,9 +33,9 @@ pub fn render(frame: &mut Frame, area: Rect, app: &AppState, snapshot: &StoreSna
             if is_selected {
                 // Selected: solid bg + white bold text
                 let tab_bg = if theme::is_light_mode() {
-                    Color::Rgb(60, 60, 80)
+                    Color::Rgb(50, 50, 70)
                 } else {
-                    Color::Rgb(80, 90, 120)
+                    Color::Rgb(65, 105, 225) // royal blue — high contrast on dark
                 };
                 let tab_style = Style::new()
                     .bg(tab_bg)
@@ -47,7 +47,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &AppState, snapshot: &StoreSna
 
                 spans.push(Span::styled(" ", tab_style));
                 spans.push(Span::styled(format!("{} ", dot_char), dot_style));
-                spans.push(Span::styled(format!("{} ", t.name), tab_style));
+                spans.push(Span::styled(format!("{} ", t.name.to_uppercase()), tab_style));
             } else {
                 // Inactive: no bg, dim text
                 let dot_style = if has_active {
@@ -57,13 +57,16 @@ pub fn render(frame: &mut Frame, area: Rect, app: &AppState, snapshot: &StoreSna
                 };
                 spans.push(Span::styled("  ", theme::dim()));
                 spans.push(Span::styled(format!("{} ", dot_char), dot_style));
-                spans.push(Span::styled(format!("{} ", t.name), theme::dim()));
+                spans.push(Span::styled(format!("{} ", t.name.to_uppercase()), theme::dim()));
             }
         }
     }
 
-    let line = Line::from(spans);
-    let paragraph = Paragraph::new(line);
+    let lines = vec![
+        Line::from(""),           // blank top line
+        Line::from(spans),        // tab content
+    ];
+    let paragraph = Paragraph::new(lines);
 
     frame.render_widget(paragraph, area);
 }
