@@ -156,7 +156,7 @@ impl TeamState {
             return false;
         }
         // Use last component of cwd as display name, fallback to truncated session_id
-        let display_name = cwd
+        let base_name = cwd
             .and_then(|p| std::path::Path::new(p).file_name())
             .and_then(|f| f.to_str())
             .map(String::from)
@@ -167,6 +167,19 @@ impl TeamState {
                     session_id.to_string()
                 }
             });
+        // Deduplicate: if name exists, append -2, -3, etc.
+        let display_name = if self.agents.iter().any(|a| a.name == base_name) {
+            let mut n = 2;
+            loop {
+                let candidate = format!("{}-{}", base_name, n);
+                if !self.agents.iter().any(|a| a.name == candidate) {
+                    break candidate;
+                }
+                n += 1;
+            }
+        } else {
+            base_name
+        };
         self.agents.push(Agent {
             name: display_name,
             agent_id: session_id.to_string(),
