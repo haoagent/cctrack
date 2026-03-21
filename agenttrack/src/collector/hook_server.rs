@@ -119,6 +119,19 @@ fn summarize_input(tool_name: &str, input: &serde_json::Value) -> String {
     }
 }
 
+/// Parse TodoWrite tool_input into TodoItem vec.
+fn parse_todo_items(input: &serde_json::Value) -> Option<Vec<crate::store::models::TodoItem>> {
+    let arr = input.get("todos")?.as_array()?;
+    let items: Vec<crate::store::models::TodoItem> = arr.iter().filter_map(|v| {
+        Some(crate::store::models::TodoItem {
+            content: v.get("content")?.as_str()?.to_string(),
+            status: v.get("status")?.as_str()?.to_string(),
+            active_form: v.get("activeForm").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+        })
+    }).collect();
+    if items.is_empty() { None } else { Some(items) }
+}
+
 #[derive(Clone)]
 struct AppState {
     event_tx: mpsc::Sender<Event>,
@@ -153,15 +166,32 @@ async fn handle_hook(
         transcript_path: transcript_path.clone(),
     };
 
+    // Extract TodoWrite items before moving tool_event
+    let todo_items = if tool_event.tool_name == "TodoWrite" {
+        parse_todo_items(&payload.tool_input)
+    } else {
+        None
+    };
+
+    let sid = session_id.clone();
     let _ = state.event_tx.send(Event::ToolCall(tool_event)).await;
+
+    // Emit TodoUpdate if we parsed todo items
+    if let Some(todos) = todo_items {
+        let _ = state.event_tx.send(Event::TodoUpdate {
+            session_id: sid.clone(),
+            todos,
+        }).await;
+    }
 
     // Parse transcript for token usage (best-effort, async)
     if let Some(ref tp) = transcript_path {
         let transcript_path = tp.clone();
         let tx = state.event_tx.clone();
+        let sid2 = sid;
         tokio::spawn(async move {
             if let Some(usage) = read_transcript_usage(&transcript_path) {
-                let _ = tx.send(Event::TokenUpdate { session_id, usage }).await;
+                let _ = tx.send(Event::TokenUpdate { session_id: sid2, usage }).await;
             }
         });
     }

@@ -64,16 +64,16 @@
     // Header stats
     document.getElementById('agent-count').textContent = team.agents ? team.agents.length : 0;
 
-    var completed = team.tasks ? team.tasks.filter(function(t) { return t.status === 'completed'; }).length : 0;
-    var total = team.tasks ? team.tasks.length : 0;
-    document.getElementById('task-progress').textContent = completed + '/' + total;
+    var todoDone = team.todos ? team.todos.filter(function(t) { return t.status === 'completed'; }).length : 0;
+    var todoTotal = team.todos ? team.todos.length : 0;
+    document.getElementById('todo-progress').textContent = todoDone + '/' + todoTotal;
     document.getElementById('event-count').textContent = team.tool_events ? team.tool_events.length : 0;
 
     var costUsd = team.metrics ? team.metrics.estimated_cost_usd : 0;
     document.getElementById('total-cost').textContent = '$' + costUsd.toFixed(2);
 
     renderAgents(team.agents || []);
-    renderTasks(team.tasks || []);
+    renderTodos(team.todos || []);
     renderActivity(team.tool_events || []);
     renderMessages(team.messages || []);
   }
@@ -118,30 +118,26 @@
     }).join('');
   }
 
-  function renderTasks(tasks) {
-    var tbody = document.getElementById('tasks-body');
-    var empty = document.getElementById('tasks-empty');
+  function renderTodos(todos) {
+    var tbody = document.getElementById('todos-body');
+    var empty = document.getElementById('todos-empty');
 
-    if (tasks.length === 0) {
+    if (todos.length === 0) {
       tbody.innerHTML = '';
       empty.style.display = 'block';
       return;
     }
     empty.style.display = 'none';
 
-    tbody.innerHTML = tasks.map(function(task) {
-      var id = task.id || '?';
-      var status = task.status || 'pending';
-      var subject = task.subject || '\u2014';
-      var blocked = task.blocked_by && task.blocked_by.length > 0;
-      var displayStatus = blocked ? 'blocked' : status;
-      var symbol = taskSymbol(displayStatus);
-      var suffix = blocked ? ' (by #' + task.blocked_by.join(',#') + ')' : '';
+    tbody.innerHTML = todos.map(function(todo) {
+      var status = todo.status || 'pending';
+      var symbol = taskSymbol(status);
+      var label = taskLabel(status);
+      var display = (status === 'in_progress' && todo.active_form) ? todo.active_form : todo.content;
 
       return '<tr>' +
-        '<td>' + esc(id) + '</td>' +
-        '<td class="task-' + displayStatus + '">' + symbol + ' ' + esc(taskLabel(displayStatus)) + esc(suffix) + '</td>' +
-        '<td>' + esc(subject) + '</td>' +
+        '<td class="task-' + status + '">' + symbol + ' ' + esc(label) + '</td>' +
+        '<td>' + esc(display) + '</td>' +
         '</tr>';
     }).join('');
   }

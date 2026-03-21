@@ -12,7 +12,7 @@
       <h1>cctrack</h1>
       <div class="stats">
         <span><span id="agent-label">Sessions</span>: <span class="value" id="agent-count">0</span></span>
-        <span>Tasks: <span class="value" id="task-progress">0/0</span></span>
+        <span>Todos: <span class="value" id="todo-progress">0/0</span></span>
         <span>Events: <span class="value" id="event-count">0</span></span>
         <span>Cost: <span class="value" id="total-cost">$0.00</span></span>
       </div>
@@ -36,17 +36,17 @@
         </div>
       </div>
 
-      <!-- Tasks Panel -->
+      <!-- Todos Panel -->
       <div class="panel">
-        <div class="panel-title">Tasks</div>
+        <div class="panel-title">Todos</div>
         <table>
           <thead>
-            <tr><th>ID</th><th>Status</th><th>Subject</th></tr>
+            <tr><th>Status</th><th>Todo</th></tr>
           </thead>
-          <tbody id="tasks-body"></tbody>
+          <tbody id="todos-body"></tbody>
         </table>
-        <div class="empty-state" id="tasks-empty" style="display:none">
-          <h2>No tasks</h2>
+        <div class="empty-state" id="todos-empty">
+          <h2>No active todos</h2>
         </div>
       </div>
 

@@ -240,6 +240,17 @@ pub struct ToolEvent {
     pub transcript_path: Option<String>,
 }
 
+// ─── Todo Items (from TodoWrite tool calls) ───
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TodoItem {
+    pub content: String,
+    pub status: String, // "pending", "in_progress", "completed"
+    #[serde(default)]
+    pub active_form: String,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Metrics {
     pub total_agents: usize,

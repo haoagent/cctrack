@@ -13,6 +13,8 @@ struct TeamState {
     config: TeamConfig,
     agents: Vec<Agent>,
     tasks: HashMap<String, TaskFile>,
+    /// Latest todos per agent (agent_id → todo items)
+    todos: HashMap<String, Vec<TodoItem>>,
     messages: Vec<Message>,
     /// Dedup key: (from, timestamp)
     message_keys: Vec<(String, String)>,
@@ -39,6 +41,7 @@ impl TeamState {
             config,
             agents,
             tasks: HashMap::new(),
+            todos: HashMap::new(),
             messages: Vec::new(),
             message_keys: Vec::new(),
             tool_events: Vec::new(),
@@ -257,11 +260,14 @@ impl TeamState {
 
     /// Build a TeamSnapshot from the current state.
     fn snapshot(&self) -> TeamSnapshot {
+        // Flatten all todos from all agents into one list
+        let all_todos: Vec<TodoItem> = self.todos.values().flat_map(|t| t.clone()).collect();
         TeamSnapshot {
             name: self.config.name.clone(),
             description: self.config.description.clone(),
             agents: self.agents.clone(),
             tasks: self.tasks.values().cloned().collect(),
+            todos: all_todos,
             messages: self.messages.clone(),
             tool_events: self.tool_events.clone(),
             metrics: self.compute_metrics(),
@@ -274,6 +280,7 @@ impl TeamState {
 struct UnregisteredSession {
     agent: Agent,
     tool_events: Vec<ToolEvent>,
+    todos: Vec<TodoItem>,
 }
 
 impl UnregisteredSession {
@@ -310,6 +317,8 @@ impl Store {
         // Track only top-level sessions (session_id → Agent info)
         // Excludes: team members, Agent-tool subagents
         let mut all_sessions: HashMap<String, Agent> = HashMap::new();
+        // Global todos: session_id → latest todo list (for ALL tab)
+        let mut global_todos: HashMap<String, Vec<TodoItem>> = HashMap::new();
         // Track pending Agent tool spawns: (cwd, timestamp) for subagent detection
         let mut pending_spawns: Vec<(String, std::time::Instant)> = Vec::new();
         // Known child session_ids (spawned by Agent tool)
@@ -446,6 +455,7 @@ impl Store {
                                     tokens: Default::default(),
                                 },
                                 tool_events: Vec::new(),
+                                todos: Vec::new(),
                             };
                             session.push_tool_event(tool_event.clone());
                             unregistered.push(session);
@@ -499,6 +509,25 @@ impl Store {
                         s.tokens = usage;
                     }
                 }
+                Event::TodoUpdate { session_id, todos } => {
+                    let mut found = false;
+                    // Check teams
+                    for state in teams.values_mut() {
+                        if state.agents.iter().any(|a| a.agent_id == session_id || a.name == session_id) {
+                            state.todos.insert(session_id.clone(), todos.clone());
+                            found = true;
+                            break;
+                        }
+                    }
+                    // Check unregistered
+                    if !found {
+                        if let Some(session) = unregistered.iter_mut().find(|s| s.agent.agent_id == session_id) {
+                            session.todos = todos.clone();
+                        }
+                    }
+                    // Store globally for ALL tab
+                    global_todos.insert(session_id, todos);
+                }
             }
 
             // Build ALL snapshot — only sessions that have actually sent events
@@ -514,11 +543,14 @@ impl Store {
 
             let all_metrics = compute_all_metrics(&all_agents, &all_tasks, &all_messages, &global_events);
 
+            let all_todos: Vec<TodoItem> = global_todos.values().flat_map(|t| t.clone()).collect();
+
             let all_snapshot = TeamSnapshot {
                 name: "all".to_string(),
                 description: "All sessions".to_string(),
                 agents: all_agents,
                 tasks: all_tasks,
+                todos: all_todos,
                 messages: all_messages,
                 tool_events: global_events.clone(),
                 metrics: all_metrics,

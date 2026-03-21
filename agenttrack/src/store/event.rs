@@ -23,6 +23,10 @@ pub enum Event {
         session_id: String,
         usage: TokenUsage,
     },
+    TodoUpdate {
+        session_id: String,
+        todos: Vec<TodoItem>,
+    },
 }
 
 /// Immutable snapshot of all state, sent to the TUI and Web layers via `watch`.
@@ -38,6 +42,7 @@ pub struct TeamSnapshot {
     pub description: String,
     pub agents: Vec<Agent>,
     pub tasks: Vec<TaskFile>,
+    pub todos: Vec<TodoItem>,
     pub messages: Vec<Message>,
     pub tool_events: Vec<ToolEvent>,
     pub metrics: Metrics,
