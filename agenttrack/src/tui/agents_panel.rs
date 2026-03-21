@@ -88,8 +88,9 @@ pub fn render(frame: &mut Frame, area: Rect, team: &TeamSnapshot, app: &AppState
         })
         .collect();
 
+    let panel_title = if team.name == "all" { " Sessions " } else { " Agents " };
     let block = Block::default()
-        .title(Span::styled(" Agents ", theme::title()))
+        .title(Span::styled(panel_title, theme::title()))
         .borders(Borders::ALL)
         .border_style(theme::border());
 

@@ -54,6 +54,13 @@
   }
 
   function renderTeam(team) {
+    // Dynamic labels: ALL tab = "Sessions", team tab = "Agents"
+    var isAll = team.name === 'all';
+    var label = isAll ? 'Sessions' : 'Agents';
+    document.getElementById('agent-label').textContent = label;
+    document.getElementById('agents-panel-title').textContent = label;
+    document.getElementById('agents-empty-title').textContent = isAll ? 'No sessions' : 'No agents';
+
     // Header stats
     document.getElementById('agent-count').textContent = team.agents ? team.agents.length : 0;
 
