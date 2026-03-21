@@ -307,8 +307,13 @@ impl Store {
         let mut teams: HashMap<String, TeamState> = HashMap::new();
         let mut unregistered: Vec<UnregisteredSession> = Vec::new();
         let mut global_events: Vec<ToolEvent> = Vec::new();
-        // Track every session that has sent events (session_id → Agent info)
+        // Track only top-level sessions (session_id → Agent info)
+        // Excludes: team members, Agent-tool subagents
         let mut all_sessions: HashMap<String, Agent> = HashMap::new();
+        // Track pending Agent tool spawns: (cwd, timestamp) for subagent detection
+        let mut pending_spawns: Vec<(String, std::time::Instant)> = Vec::new();
+        // Known child session_ids (spawned by Agent tool)
+        let mut child_sessions: std::collections::HashSet<String> = std::collections::HashSet::new();
 
         while let Some(event) = rx.recv().await {
             match event {
@@ -382,6 +387,20 @@ impl Store {
                         if let Some(session) = existing {
                             session.push_tool_event(tool_event.clone());
                         } else {
+                            // Detect subagent: if an Agent tool was called from same cwd recently
+                            let is_subagent = if let Some(cwd) = tool_event.cwd.as_deref() {
+                                let now = std::time::Instant::now();
+                                // Clean up old spawns (> 60s)
+                                pending_spawns.retain(|(_, ts)| now.duration_since(*ts).as_secs() < 60);
+                                pending_spawns.iter().any(|(spawn_cwd, _)| spawn_cwd == cwd)
+                            } else {
+                                false
+                            };
+
+                            if is_subagent {
+                                child_sessions.insert(session_id.to_string());
+                            }
+
                             let base_name = tool_event.transcript_path.as_deref()
                                 .and_then(|p| crate::collector::hook_server::read_session_title(p))
                                 .or_else(|| {
@@ -420,7 +439,7 @@ impl Store {
                                 agent: Agent {
                                     name: display_name,
                                     agent_id: session_id.to_string(),
-                                    agent_type: Some("session".to_string()),
+                                    agent_type: Some(if is_subagent { "subagent" } else { "session" }.to_string()),
                                     model: None,
                                     color: None,
                                     status: AgentStatus::Active,
@@ -431,18 +450,19 @@ impl Store {
                             session.push_tool_event(tool_event.clone());
                             unregistered.push(session);
                         }
+
+                        // Track in all_sessions — only top-level sessions (not team members, not subagents)
+                        if !child_sessions.contains(session_id) && !all_sessions.contains_key(session_id) {
+                            if let Some(agent) = unregistered.iter().find(|s| s.agent.agent_id == *session_id).map(|s| s.agent.clone()) {
+                                all_sessions.insert(session_id.to_string(), agent);
+                            }
+                        }
                     }
 
-                    // Track this session in all_sessions
-                    if !all_sessions.contains_key(session_id) {
-                        // Find the agent info: either from a team or from unregistered
-                        let agent_info = teams.values()
-                            .flat_map(|t| t.agents.iter())
-                            .find(|a| a.agent_id == *session_id || a.name == *session_id)
-                            .cloned()
-                            .or_else(|| unregistered.iter().find(|s| s.agent.agent_id == *session_id).map(|s| s.agent.clone()));
-                        if let Some(agent) = agent_info {
-                            all_sessions.insert(session_id.to_string(), agent);
+                    // Record Agent tool calls for subagent detection
+                    if tool_event.tool_name == "Agent" {
+                        if let Some(cwd) = tool_event.cwd.as_deref() {
+                            pending_spawns.push((cwd.to_string(), std::time::Instant::now()));
                         }
                     }
 
