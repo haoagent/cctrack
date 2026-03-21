@@ -140,7 +140,7 @@
 
       return '<tr>' +
         '<td>' + esc(id) + '</td>' +
-        '<td class="task-' + displayStatus + '">' + symbol + ' ' + esc(displayStatus) + esc(suffix) + '</td>' +
+        '<td class="task-' + displayStatus + '">' + symbol + ' ' + esc(taskLabel(displayStatus)) + esc(suffix) + '</td>' +
         '<td>' + esc(subject) + '</td>' +
         '</tr>';
     }).join('');
@@ -230,6 +230,14 @@
       case 'pending': return '\u25cb';
       case 'blocked': return '\u2298';
       default: return '?';
+    }
+  }
+
+  function taskLabel(status) {
+    switch (status) {
+      case 'in_progress': return 'running';
+      case 'completed': return 'done';
+      default: return status;
     }
   }
 

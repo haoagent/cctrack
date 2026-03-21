@@ -9,6 +9,15 @@ use crate::store::event::TeamSnapshot;
 use super::app_state::{AppState, Panel};
 use super::theme;
 
+/// Map raw task status to user-friendly label.
+fn display_task_status(raw: &str) -> &str {
+    match raw {
+        "in_progress" => "running",
+        "completed" => "done",
+        other => other,
+    }
+}
+
 /// Render the tasks table.
 pub fn render(frame: &mut Frame, area: Rect, team: &TeamSnapshot, app: &AppState) {
     let _is_focused = app.active_panel == Panel::Tasks;
@@ -38,7 +47,7 @@ pub fn render(frame: &mut Frame, area: Rect, team: &TeamSnapshot, app: &AppState
             } else {
                 let sym = theme::task_status_symbol(raw_status);
                 let sty = theme::task_status_style(raw_status);
-                (format!("{} {}", sym, raw_status), sym, sty)
+                (format!("{} {}", sym, display_task_status(raw_status)), sym, sty)
             };
             let _ = sym; // used inside display_status already
 
