@@ -199,8 +199,9 @@ async fn handle_hook(
     StatusCode::OK
 }
 
-/// Read session title from transcript first line (queue-operation content).
-/// Truncates to 30 chars for display.
+/// Read user's first message from transcript as a session title.
+/// Filters out file paths, commands, and other non-title content.
+/// Returns a clean, meaningful title or None.
 pub fn read_session_title(path: &str) -> Option<String> {
     let file = std::fs::File::open(path).ok()?;
     let reader = std::io::BufReader::new(file);
@@ -210,15 +211,35 @@ pub fn read_session_title(path: &str) -> Option<String> {
         if let Ok(val) = serde_json::from_str::<serde_json::Value>(&line) {
             if val.get("type").and_then(|v| v.as_str()) == Some("queue-operation") {
                 if let Some(content) = val.get("content").and_then(|v| v.as_str()) {
-                    let title: String = content.chars().take(30).collect();
-                    if !title.is_empty() {
-                        return Some(title);
-                    }
+                    return clean_session_title(content);
                 }
             }
         }
     }
     None
+}
+
+/// Clean user's first message into a usable session title.
+/// Returns None if the content is a file path, command, or too short.
+fn clean_session_title(content: &str) -> Option<String> {
+    // Take first line only (ignore pasted content / multi-line)
+    let first_line = content.lines().next().unwrap_or("").trim();
+
+    // Skip if empty or too short
+    if first_line.len() < 2 {
+        return None;
+    }
+    // Skip file paths
+    if first_line.starts_with('/') || first_line.starts_with('~') || first_line.contains("\\") {
+        return None;
+    }
+    // Skip commands
+    if first_line.starts_with("git ") || first_line.starts_with("npm ") || first_line.starts_with("cargo ") {
+        return None;
+    }
+
+    let title: String = first_line.chars().take(40).collect();
+    Some(title)
 }
 
 /// Read a transcript .jsonl file and sum all token usage.
