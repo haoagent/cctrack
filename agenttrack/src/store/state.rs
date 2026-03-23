@@ -410,14 +410,11 @@ impl Store {
                                 child_sessions.insert(session_id.to_string());
                             }
 
-                            let base_name = tool_event.transcript_path.as_deref()
-                                .and_then(|p| crate::collector::hook_server::read_session_title(p))
-                                .or_else(|| {
-                                    tool_event.cwd.as_deref()
-                                        .and_then(|p| std::path::Path::new(p).file_name())
-                                        .and_then(|f| f.to_str())
-                                        .map(String::from)
-                                })
+                            // Session name: CWD directory name > truncated session_id
+                            let base_name = tool_event.cwd.as_deref()
+                                .and_then(|p| std::path::Path::new(p).file_name())
+                                .and_then(|f| f.to_str())
+                                .map(String::from)
                                 .unwrap_or_else(|| {
                                     if session_id.len() > 8 {
                                         format!("session-{}", &session_id[..8])
