@@ -50,9 +50,16 @@ pub fn render(frame: &mut Frame, area: Rect, team: &TeamSnapshot, app: &AppState
         team.agents.iter().collect()
     };
 
-    let panel_title = if is_all { " Sessions " } else { " Agents " };
+    let panel_title = if is_all {
+        format!(" Sessions ({}) ", agents.len())
+    } else {
+        let active = team.agents.iter()
+            .filter(|a| a.status == crate::store::models::AgentStatus::Active)
+            .count();
+        format!(" Agents ({}/{}) ", active, team.agents.len())
+    };
     let block = Block::default()
-        .title(Span::styled(panel_title, theme::title()))
+        .title(Span::styled(&panel_title, theme::title()))
         .borders(Borders::ALL)
         .border_style(theme::border());
 

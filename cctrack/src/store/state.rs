@@ -22,7 +22,7 @@ struct TeamState {
     last_activity_at: std::time::Instant,
 }
 
-const TEAM_EXPIRE_SECS: u64 = 3600; // 60 minutes → hide from tab bar
+const TEAM_EXPIRE_SECS: u64 = 86400; // 24 hours → remove from tab bar
 
 impl TeamState {
     fn new(config: TeamConfig) -> Self {
@@ -300,7 +300,7 @@ struct UnregisteredSession {
 }
 
 const IDLE_TIMEOUT_SECS: u64 = 300;     // 5 minutes → Idle
-const ENDED_TIMEOUT_SECS: u64 = 1800;   // 30 minutes → Shutdown
+const ENDED_TIMEOUT_SECS: u64 = 3600;   // 60 minutes → Shutdown
 
 impl UnregisteredSession {
     fn push_tool_event(&mut self, event: ToolEvent) {
@@ -656,6 +656,25 @@ impl Store {
             // Update timeout-based status for unregistered sessions
             for session in unregistered.iter_mut() {
                 session.update_timeout_status();
+            }
+            // Update timeout-based status for team agents
+            for state in teams.values_mut() {
+                let elapsed = state.last_activity_at.elapsed().as_secs();
+                if elapsed >= ENDED_TIMEOUT_SECS {
+                    // No activity for 30 min → all non-shutdown agents become Shutdown
+                    for agent in &mut state.agents {
+                        if agent.status != AgentStatus::Shutdown {
+                            agent.status = AgentStatus::Shutdown;
+                        }
+                    }
+                } else if elapsed >= IDLE_TIMEOUT_SECS {
+                    // No activity for 5 min → active agents become Idle
+                    for agent in &mut state.agents {
+                        if agent.status == AgentStatus::Active {
+                            agent.status = AgentStatus::Idle;
+                        }
+                    }
+                }
             }
             // Sync status + name updates to all_sessions
             for session in &unregistered {
