@@ -48,7 +48,9 @@ impl TeamState {
             messages: Vec::new(),
             message_keys: Vec::new(),
             tool_events: Vec::new(),
-            last_activity_at: std::time::Instant::now(),
+            // Start as "old" — only real activity will make it fresh.
+            // This ensures dead teams from previous runs don't appear active.
+            last_activity_at: std::time::Instant::now() - std::time::Duration::from_secs(ENDED_TIMEOUT_SECS + 1),
         }
     }
 
@@ -211,11 +213,31 @@ impl TeamState {
         self.last_activity_at = std::time::Instant::now();
     }
 
-    /// Check if team is expired: all agents shutdown + no activity for 60 min.
+    /// Check if team is expired: all agents shutdown + no recent activity.
+    /// Uses both in-memory timer AND config file mtime for restart resilience.
     fn is_expired(&self) -> bool {
         let all_shutdown = !self.agents.is_empty()
             && self.agents.iter().all(|a| a.status == AgentStatus::Shutdown);
-        all_shutdown && self.last_activity_at.elapsed().as_secs() >= TEAM_EXPIRE_SECS
+        if !all_shutdown {
+            return false;
+        }
+        // Check in-memory timer
+        if self.last_activity_at.elapsed().as_secs() >= TEAM_EXPIRE_SECS {
+            return true;
+        }
+        // Check config file mtime (survives restarts)
+        let config_path = crate::config::Config::claude_home()
+            .join("teams")
+            .join(&self.config.name)
+            .join("config.json");
+        if let Ok(meta) = std::fs::metadata(&config_path) {
+            if let Ok(mtime) = meta.modified() {
+                if let Ok(elapsed) = mtime.elapsed() {
+                    return elapsed.as_secs() >= TEAM_EXPIRE_SECS;
+                }
+            }
+        }
+        false
     }
 
     /// Compute metrics from current state.
