@@ -143,9 +143,8 @@ pub fn compute_stats(claude_home: &Path) -> StatsReport {
                 continue;
             }
 
-            if let Some(usage) = parse_transcript(&file_path, &project_name) {
-                sessions.push(usage);
-            }
+            let usages = parse_transcript(&file_path, &project_name);
+            sessions.extend(usages);
         }
     }
 
@@ -189,60 +188,66 @@ pub fn compute_stats(claude_home: &Path) -> StatsReport {
 }
 
 /// Parse a single transcript .jsonl file for usage data.
-fn parse_transcript(path: &Path, project_name: &str) -> Option<SessionUsage> {
-    let content = std::fs::read_to_string(path).ok()?;
-    let mut usage = SessionUsage {
-        project: project_name.to_string(),
-        ..Default::default()
+/// Returns multiple SessionUsage entries — one per day the session was active.
+/// This ensures tokens are attributed to the actual day they were consumed.
+fn parse_transcript(path: &Path, project_name: &str) -> Vec<SessionUsage> {
+    let content = match std::fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(_) => return Vec::new(),
     };
 
-    for line in content.lines() {
-        // Extract date from first timestamp
-        if usage.date.is_none() {
-            if let Ok(val) = serde_json::from_str::<serde_json::Value>(line) {
-                if let Some(ts) = val.get("timestamp").and_then(|v| v.as_str()) {
-                    // Parse ISO 8601: "2026-03-20T08:25:06.464Z"
-                    if ts.len() >= 10 {
-                        usage.date = NaiveDate::parse_from_str(&ts[..10], "%Y-%m-%d").ok();
-                    }
-                }
-            }
-        }
+    let mut model = String::new();
+    // Accumulate usage per-day: date → usage
+    let mut daily: HashMap<NaiveDate, SessionUsage> = HashMap::new();
 
-        // Sum token usage + extract model from assistant messages
+    for line in content.lines() {
+
+        // Only process lines with usage or model data
         if !line.contains("\"usage\"") && !line.contains("\"model\"") {
             continue;
         }
         if let Ok(val) = serde_json::from_str::<serde_json::Value>(line) {
             // Extract model (first one wins)
-            if usage.model.is_empty() {
-                if let Some(model) = val.get("message").and_then(|m| m.get("model")).and_then(|v| v.as_str()) {
-                    usage.model = model.to_string();
+            if model.is_empty() {
+                if let Some(m) = val.get("message").and_then(|m| m.get("model")).and_then(|v| v.as_str()) {
+                    model = m.to_string();
                 }
             }
-            if let Some(u) = val.get("message").and_then(|m| m.get("usage")) {
-                usage.input_tokens += u.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-                usage.output_tokens += u.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-                usage.cache_read_tokens += u.get("cache_read_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
 
-                // Split cache writes by duration (5min vs 1hr)
+            // Extract timestamp for this message → determine which day
+            let msg_date = val.get("timestamp")
+                .and_then(|v| v.as_str())
+                .and_then(|ts| if ts.len() >= 10 { NaiveDate::parse_from_str(&ts[..10], "%Y-%m-%d").ok() } else { None });
+
+            if let Some(u) = val.get("message").and_then(|m| m.get("usage")) {
+                let date = msg_date.unwrap_or_else(|| Utc::now().date_naive());
+
+                let day_usage = daily.entry(date).or_insert_with(|| SessionUsage {
+                    date: Some(date),
+                    project: project_name.to_string(),
+                    model: model.clone(),
+                    ..Default::default()
+                });
+
+                day_usage.input_tokens += u.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                day_usage.output_tokens += u.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                day_usage.cache_read_tokens += u.get("cache_read_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+
                 if let Some(cc) = u.get("cache_creation") {
-                    usage.cache_write_5m_tokens += cc.get("ephemeral_5m_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-                    usage.cache_write_1h_tokens += cc.get("ephemeral_1h_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                    day_usage.cache_write_5m_tokens += cc.get("ephemeral_5m_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                    day_usage.cache_write_1h_tokens += cc.get("ephemeral_1h_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
                 } else {
-                    // Fallback: treat all cache_creation as 5min if no breakdown
-                    usage.cache_write_5m_tokens += u.get("cache_creation_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                    day_usage.cache_write_5m_tokens += u.get("cache_creation_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
                 }
             }
         }
     }
 
-    // Skip sessions with no usage
-    if usage.total_tokens() == 0 {
-        return None;
-    }
-
-    Some(usage)
+    // Return all daily entries (skip empty)
+    let results: Vec<SessionUsage> = daily.into_values()
+        .filter(|u| u.total_tokens() > 0)
+        .collect();
+    results
 }
 
 /// Convert a project directory name to a readable name.
