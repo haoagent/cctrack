@@ -191,8 +191,40 @@ async fn handle_hook(
         None => session_id.clone(),
     };
 
-    // Use agent_transcript_path for sub-agents, transcript_path for regular sessions
-    let effective_transcript = agent_transcript_path.or(transcript_path.clone());
+    // Use agent_transcript_path for sub-agents, or derive from transcript_path + agent_id
+    let effective_transcript = agent_transcript_path
+        .or_else(|| {
+            // Claude Code doesn't send agent_transcript_path, so derive it:
+            // parent transcript: /path/to/{session_id}.jsonl
+            // sub-agent transcript: /path/to/{session_id}/subagents/agent-{agent_id}.jsonl
+            if let (Some(ref tp), Some(ref aid)) = (&transcript_path, &agent_id) {
+                let parent = std::path::Path::new(tp);
+                if let Some(stem) = parent.file_stem().and_then(|s| s.to_str()) {
+                    let dir = parent.parent()?;
+                    let subagent_path = dir.join(stem).join("subagents").join(format!("agent-{}.jsonl", aid));
+                    if subagent_path.exists() {
+                        return Some(subagent_path.to_string_lossy().to_string());
+                    }
+                }
+                None
+            } else {
+                None
+            }
+        })
+        .or(transcript_path.clone());
+
+    // Extract sub-agent name mapping before moving payload fields
+    // When parent calls Agent tool: tool_input.description + tool_response.agentId
+    let subagent_name_mapping = if payload.tool_name == "Agent" && agent_id.is_none() {
+        let desc = payload.tool_input.get("description").and_then(|v| v.as_str()).map(String::from);
+        let child_id = payload.tool_response.get("agentId").and_then(|v| v.as_str()).map(String::from);
+        match (desc, child_id) {
+            (Some(d), Some(c)) => Some((c, d)),
+            _ => None,
+        }
+    } else {
+        None
+    };
 
     let tool_event = ToolEvent {
         agent_name: effective_id.clone(),
@@ -219,6 +251,14 @@ async fn handle_hook(
 
     let sid = effective_id.clone();
     let _ = state.event_tx.send(Event::ToolCall(tool_event)).await;
+
+    // Emit SubAgentName when parent calls Agent tool
+    if let Some((child_id, desc)) = subagent_name_mapping {
+        let _ = state.event_tx.send(Event::SubAgentName {
+            agent_id: child_id,
+            name: desc,
+        }).await;
+    }
 
     // Emit TodoUpdate if we parsed todo items
     if let Some(todos) = todo_items {

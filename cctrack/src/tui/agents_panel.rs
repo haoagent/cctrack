@@ -46,15 +46,14 @@ pub fn render(frame: &mut Frame, area: Rect, team: &TeamSnapshot, app: &AppState
 
     let agents: Vec<_> = team.agents.iter().collect();
 
+    let active = team.agents.iter()
+        .filter(|a| a.status == crate::store::models::AgentStatus::Active)
+        .count();
+    let total = agents.len();
     let panel_title = if is_all {
-        format!(" Sessions ({}) ", agents.len())
-    } else if is_session_tab {
-        format!(" Agents ({}) ", agents.len())
+        format!(" Sessions ({}/{}) ", active, total)
     } else {
-        let active = team.agents.iter()
-            .filter(|a| a.status == crate::store::models::AgentStatus::Active)
-            .count();
-        format!(" Agents ({}/{}) ", active, team.agents.len())
+        format!(" Agents ({}/{}) ", active, total)
     };
     let block = Block::default()
         .title(Span::styled(&panel_title, theme::title()))

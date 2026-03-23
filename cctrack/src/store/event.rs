@@ -27,6 +27,11 @@ pub enum Event {
         session_id: String,
         todos: Vec<TodoItem>,
     },
+    /// Map sub-agent ID to its description (from parent's Agent tool call).
+    SubAgentName {
+        agent_id: String,
+        name: String,
+    },
     /// Periodic tick to refresh timeout-based status.
     Tick,
 }

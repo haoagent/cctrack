@@ -60,14 +60,9 @@ pub fn render(frame: &mut Frame, area: Rect, app: &AppState, snapshot: &StoreSna
 
             let dot_char = if has_active { "\u{25cf}" } else { "\u{25cb}" }; // ● or ○
 
-            // Tab label: strip "session:" prefix for display, add agent count
-            let agent_count = t.agents.len();
+            // Tab label: strip "session:" prefix for display
             let display_name = t.name.strip_prefix("session:").unwrap_or(&t.name);
-            let raw_label = if is_all {
-                display_name.to_uppercase()
-            } else {
-                format!("{} ({})", display_name.to_uppercase(), agent_count)
-            };
+            let raw_label = display_name.to_uppercase();
             // Truncate long tab labels (max 24 display chars)
             let tab_label = truncate_display(&raw_label, 24);
 

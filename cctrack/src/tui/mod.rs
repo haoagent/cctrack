@@ -35,11 +35,7 @@ use app_state::AppState;
 pub async fn run_tui(
     snapshot_rx: watch::Receiver<StoreSnapshot>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Resize terminal window to 90x25
-    print!("\x1b[8;25;90t");
-    let _ = io::stdout().flush();
-
-    // Setup terminal
+    // Setup terminal (use default window size)
     enable_raw_mode()?;
     io::stdout().execute(EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(io::stdout());
