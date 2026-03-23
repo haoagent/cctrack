@@ -9,11 +9,34 @@ use std::path::Path;
 use chrono::{NaiveDate, Utc, Datelike};
 use serde::Serialize;
 
+/// Per-model pricing ($/MTok)
+struct ModelPricing {
+    input: f64,
+    output: f64,
+    cache_write: f64,  // 1.25x input
+    cache_read: f64,   // 0.1x input
+}
+
+fn get_pricing(model: &str) -> ModelPricing {
+    let m = model.to_lowercase();
+    if m.contains("opus") {
+        ModelPricing { input: 15.0, output: 75.0, cache_write: 18.75, cache_read: 1.50 }
+    } else if m.contains("sonnet") {
+        ModelPricing { input: 3.0, output: 15.0, cache_write: 3.75, cache_read: 0.30 }
+    } else if m.contains("haiku") {
+        ModelPricing { input: 0.80, output: 4.0, cache_write: 1.0, cache_read: 0.08 }
+    } else {
+        // Default to Sonnet pricing (most common)
+        ModelPricing { input: 3.0, output: 15.0, cache_write: 3.75, cache_read: 0.30 }
+    }
+}
+
 /// Usage stats for a single transcript/session.
 #[derive(Debug, Clone, Default)]
 struct SessionUsage {
     date: Option<NaiveDate>,
     project: String,
+    model: String,
     input_tokens: u64,
     output_tokens: u64,
     cache_read_tokens: u64,
@@ -26,10 +49,12 @@ impl SessionUsage {
     }
 
     fn estimated_cost_usd(&self) -> f64 {
-        let input = (self.input_tokens + self.cache_create_tokens) as f64 / 1_000_000.0 * 15.0;
-        let output = self.output_tokens as f64 / 1_000_000.0 * 75.0;
-        let cache = self.cache_read_tokens as f64 / 1_000_000.0 * 1.5;
-        input + output + cache
+        let p = get_pricing(&self.model);
+        let input = self.input_tokens as f64 / 1_000_000.0 * p.input;
+        let output = self.output_tokens as f64 / 1_000_000.0 * p.output;
+        let cache_w = self.cache_create_tokens as f64 / 1_000_000.0 * p.cache_write;
+        let cache_r = self.cache_read_tokens as f64 / 1_000_000.0 * p.cache_read;
+        input + output + cache_w + cache_r
     }
 }
 
@@ -174,11 +199,17 @@ fn parse_transcript(path: &Path, project_name: &str) -> Option<SessionUsage> {
             }
         }
 
-        // Sum token usage from assistant messages
-        if !line.contains("\"usage\"") {
+        // Sum token usage + extract model from assistant messages
+        if !line.contains("\"usage\"") && !line.contains("\"model\"") {
             continue;
         }
         if let Ok(val) = serde_json::from_str::<serde_json::Value>(line) {
+            // Extract model (first one wins)
+            if usage.model.is_empty() {
+                if let Some(model) = val.get("message").and_then(|m| m.get("model")).and_then(|v| v.as_str()) {
+                    usage.model = model.to_string();
+                }
+            }
             if let Some(u) = val.get("message").and_then(|m| m.get("usage")) {
                 usage.input_tokens += u.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
                 usage.output_tokens += u.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
