@@ -258,11 +258,14 @@ fn project_dir_to_name(path: &Path) -> String {
         .unwrap_or("unknown");
 
     // Claude Code encodes paths with dashes: "-Users-jerry-Documents-Clipal"
-    // Take the last segment
+    // Take the last non-empty segment
     if dir_name.starts_with('-') {
-        dir_name.rsplit('-').next().unwrap_or(dir_name).to_string()
-    } else if dir_name == "." || dir_name.is_empty() {
-        "home".to_string()
+        let name = dir_name.rsplit('-')
+            .find(|s| !s.is_empty())
+            .unwrap_or("root");
+        if name.is_empty() { "root".to_string() } else { name.to_string() }
+    } else if dir_name == "." || dir_name == "-" || dir_name.is_empty() {
+        "root".to_string()
     } else {
         dir_name.to_string()
     }
