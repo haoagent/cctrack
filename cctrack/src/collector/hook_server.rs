@@ -137,6 +137,24 @@ struct AppState {
     event_tx: mpsc::Sender<Event>,
 }
 
+/// Parse sub-agent info from transcript_path.
+/// Sub-agent paths: .../{parent-session-id}/subagents/agent-{agentId}.jsonl
+/// Returns (parent_session_id, agent_id) if this is a sub-agent.
+pub fn parse_subagent_path(transcript_path: &str) -> Option<(String, String)> {
+    let path = std::path::Path::new(transcript_path);
+    // Check if parent dir is "subagents"
+    let parent_dir = path.parent()?.file_name()?.to_str()?;
+    if parent_dir != "subagents" {
+        return None;
+    }
+    // Extract agent_id from filename: "agent-{id}.jsonl" → "{id}"
+    let filename = path.file_stem()?.to_str()?;
+    let agent_id = filename.strip_prefix("agent-")?.to_string();
+    // Extract parent session_id: two levels up from the file
+    let parent_session_id = path.parent()?.parent()?.file_name()?.to_str()?.to_string();
+    Some((parent_session_id, agent_id))
+}
+
 async fn handle_hook(
     State(state): State<AppState>,
     body: Bytes,
@@ -151,8 +169,33 @@ async fn handle_hook(
     let cwd = payload.extra.get("cwd").and_then(|v| v.as_str()).map(String::from);
     let transcript_path = payload.extra.get("transcript_path").and_then(|v| v.as_str()).map(String::from);
 
+    // Detect sub-agent from hook payload fields (preferred) or transcript path (fallback)
+    // Claude Code sends: agent_id, agent_type, agent_transcript_path for sub-agents
+    let agent_id = payload.extra.get("agent_id").and_then(|v| v.as_str()).map(String::from);
+    let agent_type = payload.extra.get("agent_type").and_then(|v| v.as_str()).map(String::from);
+    let agent_transcript_path = payload.extra.get("agent_transcript_path").and_then(|v| v.as_str()).map(String::from);
+
+    let subagent_info = if let Some(ref aid) = agent_id {
+        // Hook payload has explicit agent_id → this is a sub-agent
+        Some((session_id.clone(), aid.clone(), agent_type.clone()))
+    } else {
+        // Fallback: try parsing from agent_transcript_path or transcript_path
+        agent_transcript_path.as_deref().and_then(parse_subagent_path)
+            .or_else(|| transcript_path.as_deref().and_then(parse_subagent_path))
+            .map(|(pid, aid)| (pid, aid, None))
+    };
+
+    // For sub-agents, use agent_id as the effective identifier
+    let effective_id = match subagent_info {
+        Some((_, ref aid, _)) => aid.clone(),
+        None => session_id.clone(),
+    };
+
+    // Use agent_transcript_path for sub-agents, transcript_path for regular sessions
+    let effective_transcript = agent_transcript_path.or(transcript_path.clone());
+
     let tool_event = ToolEvent {
-        agent_name: session_id.clone(),
+        agent_name: effective_id.clone(),
         tool_name: payload.tool_name,
         timestamp: chrono::Utc::now().to_rfc3339(),
         summary,
@@ -163,7 +206,8 @@ async fn handle_hook(
         },
         success: None,
         cwd,
-        transcript_path: transcript_path.clone(),
+        transcript_path: effective_transcript.clone(),
+        subagent_info: subagent_info.clone(),
     };
 
     // Extract TodoWrite items before moving tool_event
@@ -173,7 +217,7 @@ async fn handle_hook(
         None
     };
 
-    let sid = session_id.clone();
+    let sid = effective_id.clone();
     let _ = state.event_tx.send(Event::ToolCall(tool_event)).await;
 
     // Emit TodoUpdate if we parsed todo items
@@ -185,12 +229,12 @@ async fn handle_hook(
     }
 
     // Parse transcript for token usage (best-effort, async)
-    if let Some(ref tp) = transcript_path {
-        let transcript_path = tp.clone();
+    // For sub-agents: read their own transcript; for parent: read parent transcript
+    if let Some(tp) = effective_transcript {
         let tx = state.event_tx.clone();
         let sid2 = sid;
         tokio::spawn(async move {
-            if let Some(usage) = read_transcript_usage(&transcript_path) {
+            if let Some(usage) = read_transcript_usage(&tp) {
                 let _ = tx.send(Event::TokenUpdate { session_id: sid2, usage }).await;
             }
         });
@@ -255,6 +299,7 @@ pub fn read_transcript_usage(path: &str) -> Option<TokenUsage> {
 }
 
 /// Read transcript for both usage and model name.
+/// Cost is computed per-message with tiered pricing.
 pub fn read_transcript_usage_and_model(path: &str) -> Option<(TokenUsage, Option<String>)> {
     let content = std::fs::read_to_string(path).ok()?;
     let mut usage = TokenUsage::default();
@@ -264,17 +309,23 @@ pub fn read_transcript_usage_and_model(path: &str) -> Option<(TokenUsage, Option
             continue;
         }
         if let Ok(val) = serde_json::from_str::<serde_json::Value>(line) {
-            // Extract model (first one wins)
-            if model.is_none() {
-                if let Some(m) = val.get("message").and_then(|m| m.get("model")).and_then(|v| v.as_str()) {
-                    model = Some(m.to_string());
-                }
+            // Extract model — update per message (can change mid-session)
+            if let Some(m) = val.get("message").and_then(|m| m.get("model")).and_then(|v| v.as_str()) {
+                model = Some(m.to_string());
             }
             if let Some(u) = val.get("message").and_then(|m| m.get("usage")) {
-                usage.input_tokens += u.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-                usage.output_tokens += u.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-                usage.cache_read_tokens += u.get("cache_read_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-                usage.cache_create_tokens += u.get("cache_creation_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                let input = u.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                let output = u.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                let cache_read = u.get("cache_read_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                let (cache_write_5m, cache_write_1h) = if let Some(cc) = u.get("cache_creation") {
+                    (
+                        cc.get("ephemeral_5m_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0),
+                        cc.get("ephemeral_1h_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0),
+                    )
+                } else {
+                    (u.get("cache_creation_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0), 0)
+                };
+                usage.add_message(model.as_deref(), input, output, cache_read, cache_write_5m, cache_write_1h);
             }
         }
     }
@@ -385,5 +436,27 @@ mod tests {
     fn summarize_unknown_tool() {
         let input = serde_json::json!({"some_field": "value"});
         assert_eq!(summarize_input("CustomTool", &input), "CustomTool");
+    }
+
+    #[test]
+    fn parse_subagent_path_valid() {
+        let path = "/Users/jerry/.claude/projects/-Users-jerry-Documents-Clipal/758a572d-55ef-4aa4-9118-7f304146254c/subagents/agent-a9e71542fc6453b4f.jsonl";
+        let result = parse_subagent_path(path);
+        assert_eq!(result, Some((
+            "758a572d-55ef-4aa4-9118-7f304146254c".to_string(),
+            "a9e71542fc6453b4f".to_string(),
+        )));
+    }
+
+    #[test]
+    fn parse_subagent_path_parent_transcript() {
+        let path = "/Users/jerry/.claude/projects/-Users-jerry-Documents-Clipal/758a572d-55ef-4aa4-9118-7f304146254c.jsonl";
+        assert_eq!(parse_subagent_path(path), None);
+    }
+
+    #[test]
+    fn parse_subagent_path_not_agent_prefix() {
+        let path = "/some/path/subagents/notanagent.jsonl";
+        assert_eq!(parse_subagent_path(path), None);
     }
 }

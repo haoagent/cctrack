@@ -38,17 +38,32 @@ pub async fn scan_recent(claude_home: &Path, event_tx: mpsc::Sender<Event>) {
         // Derive CWD from project dir: "-Users-jerry-Documents-Clipal" → "/Users/jerry/Documents/Clipal"
         let cwd = project_dir_to_cwd(&project_path);
 
-        let jsonl_files = match std::fs::read_dir(&project_path) {
-            Ok(entries) => entries,
-            Err(_) => continue,
-        };
+        // Collect all .jsonl files: top-level + subagents directories
+        let mut jsonl_files: Vec<std::path::PathBuf> = Vec::new();
 
-        for file_entry in jsonl_files.flatten() {
-            let file_path = file_entry.path();
-            if file_path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
-                continue;
+        if let Ok(entries) = std::fs::read_dir(&project_path) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|e| e.to_str()) == Some("jsonl") {
+                    jsonl_files.push(path);
+                } else if path.is_dir() {
+                    // Check for subagents/ directory inside session dirs
+                    let subagents_dir = path.join("subagents");
+                    if subagents_dir.is_dir() {
+                        if let Ok(sub_entries) = std::fs::read_dir(&subagents_dir) {
+                            for sub_entry in sub_entries.flatten() {
+                                let sub_path = sub_entry.path();
+                                if sub_path.extension().and_then(|e| e.to_str()) == Some("jsonl") {
+                                    jsonl_files.push(sub_path);
+                                }
+                            }
+                        }
+                    }
+                }
             }
+        }
 
+        for file_path in jsonl_files {
             // Only process recently modified files
             let modified = match file_path.metadata().and_then(|m| m.modified()) {
                 Ok(t) => t,
@@ -66,9 +81,17 @@ pub async fn scan_recent(claude_home: &Path, event_tx: mpsc::Sender<Event>) {
 
             let transcript_path = file_path.to_string_lossy().to_string();
 
-            // Send a synthetic ToolEvent to register the session
+            // Detect sub-agent from transcript path
+            let subagent_info = crate::collector::hook_server::parse_subagent_path(&transcript_path)
+                .map(|(pid, aid)| (pid, aid, None)); // No agent_type from filesystem scan
+
+            let effective_id = match subagent_info {
+                Some((_, ref agent_id, _)) => agent_id.clone(),
+                None => session_id.clone(),
+            };
+
             let tool_event = ToolEvent {
-                agent_name: session_id.clone(),
+                agent_name: effective_id.clone(),
                 tool_name: "startup_scan".to_string(),
                 timestamp: chrono::Utc::now().to_rfc3339(),
                 summary: String::new(),
@@ -76,6 +99,7 @@ pub async fn scan_recent(claude_home: &Path, event_tx: mpsc::Sender<Event>) {
                 success: None,
                 cwd: cwd.clone(),
                 transcript_path: Some(transcript_path.clone()),
+                subagent_info,
             };
 
             let _ = event_tx.send(Event::ToolCall(tool_event)).await;
@@ -83,7 +107,7 @@ pub async fn scan_recent(claude_home: &Path, event_tx: mpsc::Sender<Event>) {
             // Send token usage if available
             if let Some(usage) = read_transcript_usage(&transcript_path) {
                 let _ = event_tx.send(Event::TokenUpdate {
-                    session_id,
+                    session_id: effective_id.to_string(),
                     usage,
                 }).await;
             }

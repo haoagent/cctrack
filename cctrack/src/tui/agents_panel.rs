@@ -42,16 +42,14 @@ fn format_tokens(n: u64) -> String {
 pub fn render(frame: &mut Frame, area: Rect, team: &TeamSnapshot, app: &AppState) {
     let _is_focused = app.active_panel == Panel::Agents;
     let is_all = team.name == "all";
+    let is_session_tab = team.name.starts_with("session:");
 
-    // On ALL tab, filter out shutdown sessions
-    let agents: Vec<_> = if is_all {
-        team.agents.iter().filter(|a| a.status != crate::store::models::AgentStatus::Shutdown).collect()
-    } else {
-        team.agents.iter().collect()
-    };
+    let agents: Vec<_> = team.agents.iter().collect();
 
     let panel_title = if is_all {
         format!(" Sessions ({}) ", agents.len())
+    } else if is_session_tab {
+        format!(" Agents ({}) ", agents.len())
     } else {
         let active = team.agents.iter()
             .filter(|a| a.status == crate::store::models::AgentStatus::Active)
@@ -82,17 +80,23 @@ pub fn render(frame: &mut Frame, area: Rect, team: &TeamSnapshot, app: &AppState
                 "-".to_string()
             };
 
-            // "● Project: title" — dot=status color, project=cyan, title=normal
+            // "● Project: title (N)" — dot=status color, project=cyan, title=normal, (N)=sub-agent count
+            let sub_count_suffix = agent.sub_agent_count
+                .filter(|&n| n > 0)
+                .map(|n| format!(" ({})", n))
+                .unwrap_or_default();
             let name_line = if let Some((project, title)) = agent.name.split_once(": ") {
                 ratatui::text::Line::from(vec![
                     Span::styled(format!("{} ", status_sym), status_sty),
                     Span::styled(format!("{}: ", project), theme::project_name()),
                     Span::styled(title.to_string(), theme::text()),
+                    Span::styled(sub_count_suffix, theme::dim()),
                 ])
             } else {
                 ratatui::text::Line::from(vec![
                     Span::styled(format!("{} ", status_sym), status_sty),
                     Span::styled(agent.name.clone(), theme::project_name()),
+                    Span::styled(sub_count_suffix, theme::dim()),
                 ])
             };
 
@@ -107,6 +111,49 @@ pub fn render(frame: &mut Frame, area: Rect, team: &TeamSnapshot, app: &AppState
             Constraint::Percentage(60),
             Constraint::Percentage(18),
             Constraint::Percentage(18),
+        ];
+
+        let table = Table::new(rows, widths).header(header).block(block);
+        frame.render_widget(table, area);
+    } else if is_session_tab {
+        // Session tab: ● NAME, MODEL, TOKENS, COST (no STATUS column, dot inline)
+        let header = Row::new(vec![
+            Cell::from(Span::styled("NAME", theme::header())),
+            Cell::from(Span::styled("MODEL", theme::header())),
+            Cell::from(Span::styled("TOKENS", theme::header())),
+            Cell::from(Span::styled("COST", theme::header())),
+        ])
+        .height(1);
+
+        let rows: Vec<Row> = agents.iter().map(|agent| {
+            let model_str = agent.model.as_deref().map(short_model).unwrap_or("-");
+            let status_sym = theme::status_symbol(&agent.status);
+            let status_sty = theme::status_style(&agent.status);
+            let tokens = format_tokens(agent.tokens.total());
+            let cost = if agent.tokens.total() > 0 {
+                format!("${:.2}", agent.tokens.estimated_cost_for_model(agent.model.as_deref()))
+            } else {
+                "-".to_string()
+            };
+
+            let name_line = ratatui::text::Line::from(vec![
+                Span::styled(format!("{} ", status_sym), status_sty),
+                Span::styled(agent.name.clone(), theme::text()),
+            ]);
+
+            Row::new(vec![
+                Cell::from(name_line),
+                Cell::from(Span::styled(model_str, theme::dim())),
+                Cell::from(Span::styled(tokens, theme::dim())),
+                Cell::from(Span::styled(cost, theme::cost_style())),
+            ])
+        }).collect();
+
+        let widths = [
+            Constraint::Percentage(40),
+            Constraint::Percentage(15),
+            Constraint::Percentage(20),
+            Constraint::Percentage(20),
         ];
 
         let table = Table::new(rows, widths).header(header).block(block);

@@ -148,6 +148,12 @@ pub struct Agent {
     pub status: AgentStatus,
     #[serde(default)]
     pub tokens: TokenUsage,
+    /// Seconds since last activity (set when building snapshot)
+    #[serde(default)]
+    pub last_seen_secs: Option<u64>,
+    /// Number of sub-agents (set when building ALL tab snapshot)
+    #[serde(default)]
+    pub sub_agent_count: Option<u32>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -155,35 +161,88 @@ pub struct TokenUsage {
     pub input_tokens: u64,
     pub output_tokens: u64,
     pub cache_read_tokens: u64,
-    pub cache_create_tokens: u64,
+    pub cache_create_5m_tokens: u64,
+    pub cache_create_1h_tokens: u64,
+    /// Pre-computed cost accumulated from per-message tiered pricing.
+    #[serde(default)]
+    pub cost_usd: f64,
+}
+
+/// Threshold for tiered pricing (per-message, in tokens).
+const TIERED_THRESHOLD: u64 = 200_000;
+
+/// Calculate cost for a token count with tiered pricing.
+fn tiered_cost(tokens: u64, base_rate: f64, tiered_rate: f64) -> f64 {
+    if tokens <= TIERED_THRESHOLD {
+        tokens as f64 / 1_000_000.0 * base_rate
+    } else {
+        let below = TIERED_THRESHOLD as f64 / 1_000_000.0 * base_rate;
+        let above = (tokens - TIERED_THRESHOLD) as f64 / 1_000_000.0 * tiered_rate;
+        below + above
+    }
 }
 
 impl TokenUsage {
     pub fn total(&self) -> u64 {
-        self.input_tokens + self.output_tokens + self.cache_read_tokens + self.cache_create_tokens
+        self.input_tokens + self.output_tokens + self.cache_read_tokens
+            + self.cache_create_5m_tokens + self.cache_create_1h_tokens
     }
 
-    /// Estimate cost in USD using per-model pricing.
-    /// Falls back to Sonnet pricing if model unknown (most common in Claude Code).
+    /// Estimate cost in USD. Uses pre-computed cost if available,
+    /// otherwise falls back to flat-rate calculation.
     pub fn estimated_cost_usd(&self) -> f64 {
-        self.estimated_cost_for_model(None)
+        if self.cost_usd > 0.0 {
+            self.cost_usd
+        } else {
+            self.estimated_cost_for_model(None)
+        }
     }
 
-    /// Estimate cost with explicit model name.
+    /// Estimate cost with explicit model name (flat rate fallback).
     pub fn estimated_cost_for_model(&self, model: Option<&str>) -> f64 {
-        let (inp_rate, out_rate, cw_rate, cr_rate) = match model {
+        if self.cost_usd > 0.0 {
+            return self.cost_usd;
+        }
+        let (inp_rate, out_rate, cw5m_rate, cw1h_rate, cr_rate) = match model {
             Some(m) if m.to_lowercase().contains("opus") =>
-                (5.0, 25.0, 6.25, 0.50),    // Opus 4.5/4.6
+                (5.0, 25.0, 6.25, 10.0, 0.50),
             Some(m) if m.to_lowercase().contains("haiku") =>
-                (1.0, 5.0, 1.25, 0.10),     // Haiku 4.5
+                (1.0, 5.0, 1.25, 2.0, 0.10),
             _ =>
-                (3.0, 15.0, 3.75, 0.30),    // Sonnet 4.5/4.6 (default)
+                (3.0, 15.0, 3.75, 6.0, 0.30),
         };
         let input = self.input_tokens as f64 / 1_000_000.0 * inp_rate;
         let output = self.output_tokens as f64 / 1_000_000.0 * out_rate;
-        let cache_w = self.cache_create_tokens as f64 / 1_000_000.0 * cw_rate;
+        let cw_5m = self.cache_create_5m_tokens as f64 / 1_000_000.0 * cw5m_rate;
+        let cw_1h = self.cache_create_1h_tokens as f64 / 1_000_000.0 * cw1h_rate;
         let cache_r = self.cache_read_tokens as f64 / 1_000_000.0 * cr_rate;
-        input + output + cache_w + cache_r
+        input + output + cw_5m + cw_1h + cache_r
+    }
+
+    /// Add a single message's tokens and compute its cost with tiered pricing.
+    pub fn add_message(&mut self, model: Option<&str>,
+        input: u64, output: u64, cache_read: u64, cache_write_5m: u64, cache_write_1h: u64,
+    ) {
+        self.input_tokens += input;
+        self.output_tokens += output;
+        self.cache_read_tokens += cache_read;
+        self.cache_create_5m_tokens += cache_write_5m;
+        self.cache_create_1h_tokens += cache_write_1h;
+
+        let (inp, inp_t, out, out_t, cw, cw_t, cw1h, cr, cr_t) = match model {
+            Some(m) if m.to_lowercase().contains("opus") =>
+                (5.0, 10.0, 25.0, 37.50, 6.25, 12.50, 10.0, 0.50, 1.00),
+            Some(m) if m.to_lowercase().contains("haiku") =>
+                (1.0, 1.0, 5.0, 5.0, 1.25, 1.25, 2.0, 0.10, 0.10),
+            _ =>
+                (3.0, 3.0, 15.0, 15.0, 3.75, 3.75, 6.0, 0.30, 0.30),
+        };
+
+        self.cost_usd += tiered_cost(input, inp, inp_t)
+            + tiered_cost(output, out, out_t)
+            + tiered_cost(cache_write_5m, cw, cw_t)
+            + cache_write_1h as f64 / 1_000_000.0 * cw1h
+            + tiered_cost(cache_read, cr, cr_t);
     }
 }
 
@@ -253,6 +312,9 @@ pub struct ToolEvent {
     pub cwd: Option<String>,
     #[serde(default)]
     pub transcript_path: Option<String>,
+    /// If this event is from a sub-agent: (parent_session_id, agent_id, agent_type)
+    #[serde(default)]
+    pub subagent_info: Option<(String, String, Option<String>)>,
 }
 
 // ─── Todo Items (from TodoWrite tool calls) ───

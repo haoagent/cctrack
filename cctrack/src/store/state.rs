@@ -22,7 +22,8 @@ struct TeamState {
     last_activity_at: std::time::Instant,
 }
 
-const TEAM_EXPIRE_SECS: u64 = 86400; // 24 hours → remove from tab bar
+const TEAM_EXPIRE_SECS: u64 = 86400;         // 24 hours → remove team tab
+const SESSION_TAB_EXPIRE_SECS: u64 = 1800;   // 30 minutes → remove session tab
 
 impl TeamState {
     fn new(config: TeamConfig) -> Self {
@@ -37,6 +38,8 @@ impl TeamState {
                 color: m.color.clone(),
                 status: AgentStatus::Active,
                 tokens: Default::default(),
+                last_seen_secs: None,
+                sub_agent_count: None,
             })
             .collect();
 
@@ -83,6 +86,8 @@ impl TeamState {
                     color: m.color.clone(),
                     status: existing_status,
                     tokens: existing_tokens,
+                    last_seen_secs: None,
+                sub_agent_count: None,
                 }
             })
             .collect();
@@ -200,6 +205,8 @@ impl TeamState {
             color: None,
             status: AgentStatus::Active,
             tokens: Default::default(),
+            last_seen_secs: None,
+            sub_agent_count: None,
         });
         true
     }
@@ -221,19 +228,26 @@ impl TeamState {
         if !all_shutdown {
             return false;
         }
+        let expire_secs = if self.config.name.starts_with("session:") {
+            SESSION_TAB_EXPIRE_SECS
+        } else {
+            TEAM_EXPIRE_SECS
+        };
         // Check in-memory timer
-        if self.last_activity_at.elapsed().as_secs() >= TEAM_EXPIRE_SECS {
+        if self.last_activity_at.elapsed().as_secs() >= expire_secs {
             return true;
         }
-        // Check config file mtime (survives restarts)
-        let config_path = crate::config::Config::claude_home()
-            .join("teams")
-            .join(&self.config.name)
-            .join("config.json");
-        if let Ok(meta) = std::fs::metadata(&config_path) {
-            if let Ok(mtime) = meta.modified() {
-                if let Ok(elapsed) = mtime.elapsed() {
-                    return elapsed.as_secs() >= TEAM_EXPIRE_SECS;
+        // Check config file mtime (survives restarts) — only for real teams
+        if !self.config.name.starts_with("session:") {
+            let config_path = crate::config::Config::claude_home()
+                .join("teams")
+                .join(&self.config.name)
+                .join("config.json");
+            if let Ok(meta) = std::fs::metadata(&config_path) {
+                if let Ok(mtime) = meta.modified() {
+                    if let Ok(elapsed) = mtime.elapsed() {
+                        return elapsed.as_secs() >= expire_secs;
+                    }
                 }
             }
         }
@@ -274,7 +288,9 @@ impl TeamState {
             .count();
 
         let total_tokens: u64 = self.agents.iter().map(|a| a.tokens.total()).sum();
-        let estimated_cost_usd: f64 = self.agents.iter().map(|a| a.tokens.estimated_cost_usd()).sum();
+        let estimated_cost_usd: f64 = self.agents.iter()
+            .map(|a| a.tokens.estimated_cost_for_model(a.model.as_deref()))
+            .sum();
 
         Metrics {
             total_agents,
@@ -321,8 +337,8 @@ struct UnregisteredSession {
     transcript_path: Option<String>,
 }
 
-const IDLE_TIMEOUT_SECS: u64 = 300;     // 5 minutes → Idle
-const ENDED_TIMEOUT_SECS: u64 = 3600;   // 60 minutes → Shutdown
+const IDLE_TIMEOUT_SECS: u64 = 120;    // 2 minutes → Idle
+const ENDED_TIMEOUT_SECS: u64 = 600;   // 10 minutes → Shutdown
 
 impl UnregisteredSession {
     fn push_tool_event(&mut self, event: ToolEvent) {
@@ -341,8 +357,10 @@ impl UnregisteredSession {
         self.agent.status = AgentStatus::Active;
 
         // Retry reading transcript title + model if we don't have them yet
+        // Skip title for sub-agents — they should keep their "agent-XXXX" name
+        let is_subagent = self.agent.agent_type.as_deref() == Some("subagent");
         if let Some(ref tp) = self.transcript_path {
-            if !self.has_custom_name {
+            if !self.has_custom_name && !is_subagent {
                 if let Some(title) = crate::collector::hook_server::read_session_title(tp) {
                     if self.cwd_name.is_empty() || title.starts_with(&self.cwd_name) {
                         self.agent.name = title;
@@ -406,17 +424,97 @@ impl Store {
         let mut teams: HashMap<String, TeamState> = HashMap::new();
         let mut unregistered: Vec<UnregisteredSession> = Vec::new();
         let mut global_events: Vec<ToolEvent> = Vec::new();
-        // Track only top-level sessions (session_id → Agent info)
-        // Excludes: team members, Agent-tool subagents
         let mut all_sessions: HashMap<String, Agent> = HashMap::new();
-        // Global todos: session_id → latest todo list (for ALL tab)
         let mut global_todos: HashMap<String, Vec<TodoItem>> = HashMap::new();
-        // Track pending Agent tool spawns: (cwd, parent_session_id, timestamp)
-        let mut pending_spawns: Vec<(String, String, std::time::Instant)> = Vec::new();
-        // Known child session_ids (spawned by Agent tool)
         let mut child_sessions: std::collections::HashSet<String> = std::collections::HashSet::new();
-        // Dynamic session teams: parent_session_id → team_name
         let mut session_teams: HashMap<String, String> = HashMap::new();
+
+        // Persistence: load saved state, track dirty flag for save debouncing
+        let mut dirty = false;
+        let mut last_save = std::time::Instant::now();
+        if let Some(persisted) = crate::store::persist::load() {
+            for ps in persisted.sessions {
+                // Skip sessions whose transcript doesn't exist or is older than 24h
+                if let Some(ref tp) = ps.transcript_path {
+                    let path = std::path::Path::new(tp);
+                    if !path.exists() {
+                        continue;
+                    }
+                    if let Ok(meta) = path.metadata() {
+                        if let Ok(mtime) = meta.modified() {
+                            if mtime.elapsed().map(|d| d.as_secs() > 86400).unwrap_or(true) {
+                                continue;
+                            }
+                        }
+                    }
+                }
+                let is_subagent = ps.parent_id.is_some();
+                let agent = Agent {
+                    name: ps.name,
+                    agent_id: ps.agent_id.clone(),
+                    agent_type: ps.agent_type,
+                    model: ps.model,
+                    color: None,
+                    status: AgentStatus::Shutdown, // recomputed from transcript mtime
+                    tokens: ps.tokens,
+                    last_seen_secs: None,
+                sub_agent_count: None,
+                };
+                if is_subagent {
+                    child_sessions.insert(ps.agent_id.clone());
+                }
+                all_sessions.insert(ps.agent_id.clone(), agent.clone());
+
+                let cwd_name = ps.cwd.as_deref()
+                    .and_then(|p| std::path::Path::new(p).file_name())
+                    .and_then(|f| f.to_str())
+                    .unwrap_or("").to_string();
+                unregistered.push(UnregisteredSession {
+                    agent,
+                    tool_events: Vec::new(),
+                    todos: Vec::new(),
+                    last_event_at: std::time::Instant::now() - std::time::Duration::from_secs(ENDED_TIMEOUT_SECS + 1),
+                    has_custom_name: true,
+                    cwd_name,
+                    transcript_path: ps.transcript_path,
+                });
+
+                // Rebuild session_teams for sub-agents
+                if let Some(ref pid) = ps.parent_id {
+                    if !session_teams.contains_key(pid) {
+                        let parent_name = unregistered.iter()
+                            .find(|s| s.agent.agent_id == *pid)
+                            .map(|s| s.agent.name.clone())
+                            .unwrap_or_else(|| format!("session-{}", &pid[..8.min(pid.len())]));
+                        let team_name = format!("session:{}", parent_name);
+                        session_teams.insert(pid.clone(), team_name.clone());
+
+                        let mut ts = TeamState::new(TeamConfig {
+                            name: team_name.clone(),
+                            description: format!("Session: {}", parent_name),
+                            created_at: None,
+                            lead_agent_id: None,
+                            lead_session_id: Some(pid.clone()),
+                            members: Vec::new(),
+                        });
+                        if let Some(parent) = unregistered.iter().find(|s| s.agent.agent_id == *pid) {
+                            ts.agents.push(parent.agent.clone());
+                        }
+                        teams.insert(team_name, ts);
+                    }
+                    if let Some(team_name) = session_teams.get(pid) {
+                        if let Some(ts) = teams.get_mut(team_name) {
+                            if let Some(child) = unregistered.iter().find(|s| s.agent.agent_id == ps.agent_id) {
+                                if !ts.agents.iter().any(|a| a.agent_id == ps.agent_id) {
+                                    ts.agents.push(child.agent.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            tracing::info!("restored {} sessions from state file", unregistered.len());
+        }
 
         while let Some(event) = rx.recv().await {
             match event {
@@ -462,7 +560,11 @@ impl Store {
                 Event::ToolCall(tool_event) => {
                     let session_id = &tool_event.agent_name;
                     let mut found = false;
-                    let mut parent_id: Option<String> = None;
+
+                    // Extract subagent info (set by hook_server from hook payload or transcript path)
+                    let parent_id = tool_event.subagent_info.as_ref().map(|(pid, _, _)| pid.clone());
+                    let subagent_type = tool_event.subagent_info.as_ref().and_then(|(_, _, t)| t.clone());
+                    let is_subagent = parent_id.is_some();
 
                     // 1. Match by agent name/id in existing teams
                     for state in teams.values_mut() {
@@ -491,30 +593,23 @@ impl Store {
                         if let Some(session) = existing {
                             session.push_tool_event(tool_event.clone());
                         } else {
-                            // Detect subagent: if an Agent tool was called from same cwd recently
-                            parent_id = if let Some(cwd) = tool_event.cwd.as_deref() {
-                                let now = std::time::Instant::now();
-                                pending_spawns.retain(|(_, _, ts)| now.duration_since(*ts).as_secs() < 60);
-                                pending_spawns.iter()
-                                    .find(|(spawn_cwd, _, _)| spawn_cwd == cwd)
-                                    .map(|(_, pid, _)| pid.clone())
-                            } else {
-                                None
-                            };
-                            let is_subagent = parent_id.is_some();
-
                             if is_subagent {
                                 child_sessions.insert(session_id.to_string());
                             }
 
                             // Initial name: CWD dir > truncated session_id
-                            // Transcript title will be combined later via push_tool_event retry
                             let cwd_name = tool_event.cwd.as_deref()
                                 .and_then(|p| std::path::Path::new(p).file_name())
                                 .and_then(|f| f.to_str())
                                 .map(String::from)
                                 .unwrap_or_default();
-                            let base_name = if cwd_name.is_empty() {
+                            let base_name = if is_subagent {
+                                // Sub-agents: use agent_type if available (e.g. "Explore", "Plan")
+                                subagent_type.clone().unwrap_or_else(|| {
+                                    let short_id = if session_id.len() > 8 { &session_id[..8] } else { session_id };
+                                    format!("agent-{}", short_id)
+                                })
+                            } else if cwd_name.is_empty() {
                                 if session_id.len() > 8 {
                                     format!("session-{}", &session_id[..8])
                                 } else {
@@ -524,7 +619,7 @@ impl Store {
                                 cwd_name.clone()
                             };
 
-                            // Deduplicate name among unregistered + team agents
+                            // Deduplicate name
                             let name_exists = |name: &str| {
                                 unregistered.iter().any(|s| s.agent.name == name)
                                     || teams.values().any(|t| t.agents.iter().any(|a| a.name == name))
@@ -551,6 +646,8 @@ impl Store {
                                     color: None,
                                     status: AgentStatus::Active,
                                     tokens: Default::default(),
+                                    last_seen_secs: None,
+                sub_agent_count: None,
                                 },
                                 tool_events: Vec::new(),
                                 todos: Vec::new(),
@@ -563,34 +660,76 @@ impl Store {
                             unregistered.push(session);
                         }
 
-                        // Track in all_sessions — all sessions including subagents (not team members)
+                        // Track in all_sessions
                         if !all_sessions.contains_key(session_id) {
                             if let Some(agent) = unregistered.iter().find(|s| s.agent.agent_id == *session_id).map(|s| s.agent.clone()) {
                                 all_sessions.insert(session_id.to_string(), agent);
+                                dirty = true;
                             }
-                        }
-                    }
-
-                    // Record Agent tool calls for subagent detection
-                    if tool_event.tool_name == "Agent" {
-                        if let Some(cwd) = tool_event.cwd.as_deref() {
-                            pending_spawns.push((cwd.to_string(), session_id.to_string(), std::time::Instant::now()));
                         }
                     }
 
                     // Create dynamic tab for sessions with sub-agents
                     if let Some(ref pid) = parent_id {
+                        // Ensure parent is registered (may be missing if transcript is old)
+                        if !unregistered.iter().any(|s| s.agent.agent_id == *pid) {
+                            // Derive parent transcript path from sub-agent's transcript path
+                            let parent_transcript = tool_event.transcript_path.as_deref().and_then(|tp| {
+                                let p = std::path::Path::new(tp);
+                                // .../parent-id/subagents/agent-xxx.jsonl → .../parent-id.jsonl
+                                let subagents_dir = p.parent()?; // subagents/
+                                let session_dir = subagents_dir.parent()?; // parent-id/
+                                let project_dir = session_dir.parent()?;
+                                let parent_file = project_dir.join(format!("{}.jsonl", pid));
+                                if parent_file.exists() { Some(parent_file.to_string_lossy().to_string()) } else { None }
+                            });
+                            let parent_cwd = tool_event.cwd.clone();
+
+                            // Try to read title from parent transcript
+                            let parent_title = parent_transcript.as_deref()
+                                .and_then(crate::collector::hook_server::read_session_title);
+                            let cwd_name = parent_cwd.as_deref()
+                                .and_then(|p| std::path::Path::new(p).file_name())
+                                .and_then(|f| f.to_str())
+                                .unwrap_or("").to_string();
+                            let display_name = match (&cwd_name, &parent_title) {
+                                (c, Some(t)) if !c.is_empty() => format!("{}: {}", c, t),
+                                (c, None) if !c.is_empty() => c.clone(),
+                                (_, Some(t)) => t.clone(),
+                                _ => format!("session-{}", &pid[..8.min(pid.len())]),
+                            };
+
+                            let parent_agent = Agent {
+                                name: display_name,
+                                agent_id: pid.clone(),
+                                agent_type: Some("session".to_string()),
+                                model: None,
+                                color: None,
+                                status: AgentStatus::Shutdown, // parent is old
+                                tokens: Default::default(),
+                                last_seen_secs: None,
+                sub_agent_count: None,
+                            };
+                            all_sessions.insert(pid.clone(), parent_agent.clone());
+                            unregistered.push(UnregisteredSession {
+                                agent: parent_agent,
+                                tool_events: Vec::new(),
+                                todos: Vec::new(),
+                                last_event_at: std::time::Instant::now() - std::time::Duration::from_secs(ENDED_TIMEOUT_SECS + 1),
+                                has_custom_name: parent_title.is_some(),
+                                cwd_name,
+                                transcript_path: parent_transcript,
+                            });
+                        }
+
                         if !session_teams.contains_key(pid) {
-                            // Get parent's display name
                             let parent_name = unregistered.iter()
                                 .find(|s| s.agent.agent_id == *pid)
                                 .map(|s| s.agent.name.clone())
-                                .or_else(|| all_sessions.get(pid).map(|a| a.name.clone()))
                                 .unwrap_or_else(|| format!("session-{}", &pid[..8.min(pid.len())]));
                             let team_name = format!("session:{}", parent_name);
                             session_teams.insert(pid.clone(), team_name.clone());
 
-                            // Create the dynamic team with parent as first agent
                             let mut ts = TeamState::new(TeamConfig {
                                 name: team_name.clone(),
                                 description: format!("Session: {}", parent_name),
@@ -599,7 +738,6 @@ impl Store {
                                 lead_session_id: Some(pid.clone()),
                                 members: Vec::new(),
                             });
-                            // Add parent agent
                             if let Some(parent) = unregistered.iter().find(|s| s.agent.agent_id == *pid) {
                                 ts.agents.push(parent.agent.clone());
                             }
@@ -649,6 +787,7 @@ impl Store {
                     // Sync to all_sessions
                     if let Some(s) = all_sessions.get_mut(&session_id) {
                         s.tokens = usage;
+                        dirty = true;
                     }
                 }
                 Event::TodoUpdate { session_id, todos } => {
@@ -671,7 +810,150 @@ impl Store {
                     global_todos.insert(session_id, todos);
                 }
                 Event::Tick => {
-                    // Just triggers the timeout check + snapshot rebuild below
+                    // Persist state (debounced: at most every 30s)
+                    if dirty && last_save.elapsed().as_secs() >= 30 {
+                        let sessions: Vec<crate::store::persist::PersistedSession> = unregistered.iter().map(|s| {
+                            let parent_id = if child_sessions.contains(&s.agent.agent_id) {
+                                // Find parent from session_teams (reverse lookup)
+                                session_teams.iter()
+                                    .find(|(_, tn)| {
+                                        teams.get(*tn).map(|ts| ts.agents.iter().any(|a| a.agent_id == s.agent.agent_id)).unwrap_or(false)
+                                    })
+                                    .map(|(pid, _)| pid.clone())
+                            } else {
+                                None
+                            };
+                            crate::store::persist::PersistedSession {
+                                agent_id: s.agent.agent_id.clone(),
+                                name: s.agent.name.clone(),
+                                agent_type: s.agent.agent_type.clone(),
+                                model: s.agent.model.clone(),
+                                transcript_path: s.transcript_path.clone(),
+                                cwd: s.tool_events.iter().find_map(|e| e.cwd.clone()),
+                                tokens: s.agent.tokens.clone(),
+                                parent_id,
+                            }
+                        }).collect();
+                        crate::store::persist::save(&crate::store::persist::PersistedState {
+                            version: 1,
+                            saved_at: chrono::Utc::now().to_rfc3339(),
+                            sessions,
+                        });
+                        dirty = false;
+                        last_save = std::time::Instant::now();
+                    }
+
+                    // Discover new sub-agent transcripts from active parent sessions
+                    let mut new_subagents: Vec<(String, String, String)> = Vec::new(); // (agent_id, parent_session_id, transcript_path)
+                    for session in &unregistered {
+                        if session.agent.status != AgentStatus::Active && session.agent.status != AgentStatus::Idle {
+                            continue;
+                        }
+                        if let Some(ref tp) = session.transcript_path {
+                            // Check for subagents/ dir next to the transcript
+                            let parent_dir = std::path::Path::new(tp.as_str()).parent();
+                            let session_dir = parent_dir.and_then(|p| {
+                                // tp is like .../{session-id}.jsonl — the session dir is sibling
+                                let stem = std::path::Path::new(tp.as_str()).file_stem()?.to_str()?;
+                                Some(p.join(stem))
+                            });
+                            if let Some(sd) = session_dir {
+                                let subagents_dir = sd.join("subagents");
+                                if subagents_dir.is_dir() {
+                                    if let Ok(entries) = std::fs::read_dir(&subagents_dir) {
+                                        for entry in entries.flatten() {
+                                            let path = entry.path();
+                                            if path.extension().and_then(|e| e.to_str()) == Some("jsonl") {
+                                                if let Some((pid, aid)) = crate::collector::hook_server::parse_subagent_path(
+                                                    &path.to_string_lossy()
+                                                ) {
+                                                    // Only add if not already known
+                                                    if !child_sessions.contains(&aid)
+                                                        && !unregistered.iter().any(|s| s.agent.agent_id == aid)
+                                                        && !teams.values().any(|t| t.agents.iter().any(|a| a.agent_id == aid))
+                                                    {
+                                                        new_subagents.push((aid, pid, path.to_string_lossy().to_string()));
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    // Register discovered sub-agents
+                    for (agent_id, parent_session_id, transcript_path) in new_subagents {
+                        let _cwd = unregistered.iter()
+                            .find(|s| s.agent.agent_id == parent_session_id)
+                            .and_then(|s| s.agent.agent_type.as_ref().and(
+                                // Reuse parent's cwd from tool events
+                                s.tool_events.first().and_then(|e| e.cwd.clone())
+                            ));
+                        child_sessions.insert(agent_id.clone());
+                        let short_id = if agent_id.len() > 8 { &agent_id[..8] } else { &agent_id };
+                        let name = format!("agent-{}", short_id);
+                        let mut agent = Agent {
+                            name,
+                            agent_id: agent_id.clone(),
+                            agent_type: Some("subagent".to_string()),
+                            model: None,
+                            color: None,
+                            status: AgentStatus::Active,
+                            tokens: Default::default(),
+                            last_seen_secs: None,
+                sub_agent_count: None,
+                        };
+                        // Read token usage + model from sub-agent transcript
+                        if let Some((usage, model)) = crate::collector::hook_server::read_transcript_usage_and_model(&transcript_path) {
+                            agent.tokens = usage;
+                            agent.model = model;
+                        }
+                        all_sessions.insert(agent_id.clone(), agent.clone());
+                        let session = UnregisteredSession {
+                            agent,
+                            tool_events: Vec::new(),
+                            todos: Vec::new(),
+                            last_event_at: std::time::Instant::now(),
+                            has_custom_name: false,
+                            cwd_name: String::new(),
+                            transcript_path: Some(transcript_path),
+                        };
+                        unregistered.push(session);
+                        dirty = true;
+
+                        // Create/update dynamic tab
+                        let pid = &parent_session_id;
+                        if !session_teams.contains_key(pid) {
+                            let parent_name = unregistered.iter()
+                                .find(|s| s.agent.agent_id == *pid)
+                                .map(|s| s.agent.name.clone())
+                                .unwrap_or_else(|| format!("session-{}", &pid[..8.min(pid.len())]));
+                            let team_name = format!("session:{}", parent_name);
+                            session_teams.insert(pid.clone(), team_name.clone());
+                            let mut ts = TeamState::new(TeamConfig {
+                                name: team_name.clone(),
+                                description: format!("Session: {}", parent_name),
+                                created_at: None,
+                                lead_agent_id: None,
+                                lead_session_id: Some(pid.clone()),
+                                members: Vec::new(),
+                            });
+                            if let Some(parent) = unregistered.iter().find(|s| s.agent.agent_id == *pid) {
+                                ts.agents.push(parent.agent.clone());
+                            }
+                            teams.insert(team_name, ts);
+                        }
+                        if let Some(team_name) = session_teams.get(pid) {
+                            if let Some(ts) = teams.get_mut(team_name) {
+                                if !ts.agents.iter().any(|a| a.agent_id == agent_id) {
+                                    if let Some(child) = unregistered.iter().find(|s| s.agent.agent_id == agent_id) {
+                                        ts.agents.push(child.agent.clone());
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -680,34 +962,74 @@ impl Store {
                 session.update_timeout_status();
             }
             // Update timeout-based status for team agents
-            for state in teams.values_mut() {
-                let elapsed = state.last_activity_at.elapsed().as_secs();
-                if elapsed >= ENDED_TIMEOUT_SECS {
-                    // No activity for 30 min → all non-shutdown agents become Shutdown
+            for (team_name, state) in teams.iter_mut() {
+                if team_name.starts_with("session:") {
+                    // Session tabs: sync agent status from unregistered sessions (single source of truth)
                     for agent in &mut state.agents {
-                        if agent.status != AgentStatus::Shutdown {
-                            agent.status = AgentStatus::Shutdown;
+                        if let Some(session) = unregistered.iter().find(|s| s.agent.agent_id == agent.agent_id) {
+                            agent.status = session.agent.status.clone();
+                            agent.name = session.agent.name.clone();
+                            agent.tokens = session.agent.tokens.clone();
+                            agent.model = session.agent.model.clone();
+                            agent.last_seen_secs = Some(session.last_event_at.elapsed().as_secs());
                         }
                     }
-                } else if elapsed >= IDLE_TIMEOUT_SECS {
-                    // No activity for 5 min → active agents become Idle
-                    for agent in &mut state.agents {
-                        if agent.status == AgentStatus::Active {
-                            agent.status = AgentStatus::Idle;
+                } else {
+                    // Real team tabs: use team-level timeout
+                    let elapsed = state.last_activity_at.elapsed().as_secs();
+                    if elapsed >= ENDED_TIMEOUT_SECS {
+                        for agent in &mut state.agents {
+                            if agent.status != AgentStatus::Shutdown {
+                                agent.status = AgentStatus::Shutdown;
+                            }
+                        }
+                    } else if elapsed >= IDLE_TIMEOUT_SECS {
+                        for agent in &mut state.agents {
+                            if agent.status == AgentStatus::Active {
+                                agent.status = AgentStatus::Idle;
+                            }
                         }
                     }
                 }
             }
-            // Sync status + name updates to all_sessions
+            // Sync status + name + last_seen to all_sessions
             for session in &unregistered {
                 if let Some(s) = all_sessions.get_mut(&session.agent.agent_id) {
                     s.status = session.agent.status.clone();
                     s.name = session.agent.name.clone();
+                    s.last_seen_secs = Some(session.last_event_at.elapsed().as_secs());
                 }
             }
 
-            // Build ALL snapshot — only sessions that have actually sent events
-            let all_agents: Vec<Agent> = all_sessions.values().cloned().collect();
+            // Build ALL snapshot — top-level sessions only (exclude sub-agents)
+            // Set sub_agent_count for sessions that have sub-agents
+            let mut all_agents: Vec<Agent> = all_sessions.values()
+                .filter(|a| !child_sessions.contains(&a.agent_id))
+                .cloned()
+                .map(|mut a| {
+                    if let Some(team_name) = session_teams.get(&a.agent_id) {
+                        if let Some(ts) = teams.get(team_name) {
+                            let count = ts.agents.iter()
+                                .filter(|ag| ag.agent_type.as_deref() == Some("subagent"))
+                                .count();
+                            if count > 0 {
+                                a.sub_agent_count = Some(count as u32);
+                            }
+                        }
+                    }
+                    a
+                })
+                .collect();
+            // Sort: Active first, then by cost descending
+            all_agents.sort_by(|a, b| {
+                let a_active = a.status == AgentStatus::Active;
+                let b_active = b.status == AgentStatus::Active;
+                b_active.cmp(&a_active).then(
+                    b.tokens.estimated_cost_for_model(b.model.as_deref())
+                        .partial_cmp(&a.tokens.estimated_cost_for_model(a.model.as_deref()))
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                )
+            });
 
             let all_tasks: Vec<TaskFile> = teams.values()
                 .flat_map(|t| t.tasks.values().cloned())
@@ -732,12 +1054,24 @@ impl Store {
                 metrics: all_metrics,
             };
 
-            // Build per-team snapshots (sorted by name, hide expired teams)
+            // Build per-team snapshots: hide expired teams + inactive session tabs
             let mut team_snapshots: Vec<TeamSnapshot> = teams.values()
-                .filter(|ts| !ts.is_expired())
+                .filter(|ts| {
+                    if ts.is_expired() { return false; }
+                    // Session tabs only show when parent is active
+                    if ts.config.name.starts_with("session:") {
+                        return ts.agents.iter().any(|a| a.status == AgentStatus::Active);
+                    }
+                    true
+                })
                 .map(|ts| ts.snapshot())
                 .collect();
-            team_snapshots.sort_by(|a, b| a.name.cmp(&b.name));
+            // Sort: active tabs first, then by name
+            team_snapshots.sort_by(|a, b| {
+                let a_active = a.agents.iter().any(|ag| ag.status == AgentStatus::Active);
+                let b_active = b.agents.iter().any(|ag| ag.status == AgentStatus::Active);
+                b_active.cmp(&a_active).then(a.name.cmp(&b.name))
+            });
 
             // Final: [ALL, team1, team2, ...]
             let mut all_teams = vec![all_snapshot];
@@ -762,7 +1096,9 @@ fn compute_all_metrics(agents: &[Agent], tasks: &[TaskFile], messages: &[Message
     let blocked_tasks = tasks.iter().filter(|t| !t.blocked_by.is_empty() && t.status.as_deref() != Some("completed")).count();
 
     let total_tokens: u64 = agents.iter().map(|a| a.tokens.total()).sum();
-    let estimated_cost_usd: f64 = agents.iter().map(|a| a.tokens.estimated_cost_usd()).sum();
+    let estimated_cost_usd: f64 = agents.iter()
+        .map(|a| a.tokens.estimated_cost_for_model(a.model.as_deref()))
+        .sum();
 
     Metrics {
         total_agents,

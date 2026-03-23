@@ -11,6 +11,24 @@ use crate::store::models::AgentStatus;
 use super::app_state::AppState;
 use super::theme;
 
+/// Truncate a string to at most `max_width` display columns.
+/// Handles CJK double-width chars correctly.
+fn truncate_display(s: &str, max_width: usize) -> String {
+    use unicode_width::UnicodeWidthChar;
+    let mut width = 0;
+    let mut result = String::new();
+    for ch in s.chars() {
+        let cw = UnicodeWidthChar::width(ch).unwrap_or(0);
+        if width + cw > max_width {
+            result.push('\u{2026}'); // …
+            break;
+        }
+        result.push(ch);
+        width += cw;
+    }
+    result
+}
+
 /// Render the top tab bar.
 ///
 /// Selected tab: solid background + white text (high contrast).
@@ -27,18 +45,31 @@ pub fn render(frame: &mut Frame, area: Rect, app: &AppState, snapshot: &StoreSna
             let is_selected = i == app.selected_team_index
                 || (app.selected_team_index >= snapshot.teams.len() && i == 0);
 
-            let has_active = t.agents.iter().any(|a| a.status == AgentStatus::Active);
+            let is_session_tab = t.name.starts_with("session:");
+            let has_active = if is_session_tab {
+                // Session tab dot follows the parent session's status
+                // Parent is the first agent (or check agent_type != "subagent")
+                t.agents.iter()
+                    .find(|a| a.agent_type.as_deref() != Some("subagent"))
+                    .map(|a| a.status == AgentStatus::Active)
+                    .unwrap_or(false)
+            } else {
+                t.agents.iter().any(|a| a.status == AgentStatus::Active)
+            };
             let is_all = i == 0; // First tab is always ALL
 
             let dot_char = if has_active { "\u{25cf}" } else { "\u{25cb}" }; // ● or ○
 
-            // Tab label: "NAME (N)" where N = agent count (skip for ALL tab)
+            // Tab label: strip "session:" prefix for display, add agent count
             let agent_count = t.agents.len();
-            let tab_label = if is_all {
-                t.name.to_uppercase()
+            let display_name = t.name.strip_prefix("session:").unwrap_or(&t.name);
+            let raw_label = if is_all {
+                display_name.to_uppercase()
             } else {
-                format!("{} ({})", t.name.to_uppercase(), agent_count)
+                format!("{} ({})", display_name.to_uppercase(), agent_count)
             };
+            // Truncate long tab labels (max 24 display chars)
+            let tab_label = truncate_display(&raw_label, 24);
 
             if is_selected {
                 let tab_bg = if is_all {

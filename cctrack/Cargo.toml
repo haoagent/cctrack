@@ -32,6 +32,7 @@ clap = { version = "4", features = ["derive"] }
 
 # Utilities
 chrono = { version = "0.4", features = ["serde"] }
+unicode-width = "0.2"
 dirs = "6"
 tracing = "0.1"
 tracing-subscriber = "0.3"

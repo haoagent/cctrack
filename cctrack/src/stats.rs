@@ -5,64 +5,110 @@
 
 use std::collections::HashMap;
 use std::path::Path;
+use std::time::SystemTime;
 
 use chrono::{NaiveDate, Utc, Datelike};
 use serde::Serialize;
 
 /// Per-model pricing ($/MTok) — Anthropic API March 2026
 /// Source: https://platform.claude.com/docs/en/about-claude/pricing
+/// Tiered: tokens above 200k per-message are charged at higher rates.
 struct ModelPricing {
     input: f64,
     output: f64,
-    cache_write_5m: f64,  // 1.25x input (ephemeral 5-minute)
+    cache_write: f64,     // cache_creation (flat, or 5m ephemeral)
     cache_write_1h: f64,  // 2x input (ephemeral 1-hour)
     cache_read: f64,      // 0.1x input
+    // Tiered rates for tokens above 200k per-message
+    input_above_200k: f64,
+    output_above_200k: f64,
+    cache_write_above_200k: f64,
+    cache_read_above_200k: f64,
 }
+
+/// Threshold for tiered pricing (per-message).
+const TIERED_THRESHOLD: u64 = 200_000;
 
 fn get_pricing(model: &str) -> ModelPricing {
     let m = model.to_lowercase();
     if m.contains("opus") {
-        // Opus 4.5/4.6: $5/$25
-        ModelPricing { input: 5.0, output: 25.0, cache_write_5m: 6.25, cache_write_1h: 10.0, cache_read: 0.50 }
+        // Opus 4.5/4.6: $5/$25, above 200k: $10/$37.50
+        ModelPricing {
+            input: 5.0, output: 25.0, cache_write: 6.25, cache_write_1h: 10.0, cache_read: 0.50,
+            input_above_200k: 10.0, output_above_200k: 37.50, cache_write_above_200k: 12.50, cache_read_above_200k: 1.00,
+        }
     } else if m.contains("sonnet") {
-        // Sonnet 4.5/4.6: $3/$15
-        ModelPricing { input: 3.0, output: 15.0, cache_write_5m: 3.75, cache_write_1h: 6.0, cache_read: 0.30 }
+        // Sonnet 4.5/4.6: $3/$15 (no tiered pricing)
+        ModelPricing {
+            input: 3.0, output: 15.0, cache_write: 3.75, cache_write_1h: 6.0, cache_read: 0.30,
+            input_above_200k: 3.0, output_above_200k: 15.0, cache_write_above_200k: 3.75, cache_read_above_200k: 0.30,
+        }
     } else if m.contains("haiku") {
-        // Haiku 4.5: $1/$5
-        ModelPricing { input: 1.0, output: 5.0, cache_write_5m: 1.25, cache_write_1h: 2.0, cache_read: 0.10 }
+        // Haiku 4.5: $1/$5 (no tiered pricing)
+        ModelPricing {
+            input: 1.0, output: 5.0, cache_write: 1.25, cache_write_1h: 2.0, cache_read: 0.10,
+            input_above_200k: 1.0, output_above_200k: 5.0, cache_write_above_200k: 1.25, cache_read_above_200k: 0.10,
+        }
     } else {
-        // Default to Sonnet pricing (most common in Claude Code)
-        ModelPricing { input: 3.0, output: 15.0, cache_write_5m: 3.75, cache_write_1h: 6.0, cache_read: 0.30 }
+        // Default to Sonnet pricing
+        ModelPricing {
+            input: 3.0, output: 15.0, cache_write: 3.75, cache_write_1h: 6.0, cache_read: 0.30,
+            input_above_200k: 3.0, output_above_200k: 15.0, cache_write_above_200k: 3.75, cache_read_above_200k: 0.30,
+        }
+    }
+}
+
+/// Calculate cost for a token count with tiered pricing.
+/// Tokens up to TIERED_THRESHOLD use base_rate, tokens above use tiered_rate.
+fn tiered_cost(tokens: u64, base_rate: f64, tiered_rate: f64) -> f64 {
+    if tokens <= TIERED_THRESHOLD {
+        tokens as f64 / 1_000_000.0 * base_rate
+    } else {
+        let below = TIERED_THRESHOLD as f64 / 1_000_000.0 * base_rate;
+        let above = (tokens - TIERED_THRESHOLD) as f64 / 1_000_000.0 * tiered_rate;
+        below + above
     }
 }
 
 /// Usage stats for a single transcript/session.
+/// Cost is pre-computed per-message with tiered pricing, then accumulated.
 #[derive(Debug, Clone, Default)]
 struct SessionUsage {
     date: Option<NaiveDate>,
     project: String,
-    model: String,
     input_tokens: u64,
     output_tokens: u64,
     cache_read_tokens: u64,
-    cache_write_5m_tokens: u64,
-    cache_write_1h_tokens: u64,
+    cache_write_tokens: u64,
+    /// Pre-computed cost accumulated from per-message tiered pricing.
+    cost_usd: f64,
 }
 
 impl SessionUsage {
     fn total_tokens(&self) -> u64 {
         self.input_tokens + self.output_tokens + self.cache_read_tokens
-            + self.cache_write_5m_tokens + self.cache_write_1h_tokens
+            + self.cache_write_tokens
     }
+}
 
-    fn estimated_cost_usd(&self) -> f64 {
-        let p = get_pricing(&self.model);
-        let input = self.input_tokens as f64 / 1_000_000.0 * p.input;
-        let output = self.output_tokens as f64 / 1_000_000.0 * p.output;
-        let cw_5m = self.cache_write_5m_tokens as f64 / 1_000_000.0 * p.cache_write_5m;
-        let cw_1h = self.cache_write_1h_tokens as f64 / 1_000_000.0 * p.cache_write_1h;
-        let cr = self.cache_read_tokens as f64 / 1_000_000.0 * p.cache_read;
-        input + output + cw_5m + cw_1h + cr
+/// Per-message token counts before aggregation.
+struct MessageTokens {
+    input: u64,
+    output: u64,
+    cache_read: u64,
+    cache_write: u64,
+    cache_write_1h: u64,
+}
+
+impl MessageTokens {
+    /// Compute cost for this single message using tiered pricing.
+    fn cost(&self, pricing: &ModelPricing) -> f64 {
+        let input = tiered_cost(self.input, pricing.input, pricing.input_above_200k);
+        let output = tiered_cost(self.output, pricing.output, pricing.output_above_200k);
+        let cw = tiered_cost(self.cache_write, pricing.cache_write, pricing.cache_write_above_200k);
+        let cw_1h = self.cache_write_1h as f64 / 1_000_000.0 * pricing.cache_write_1h;
+        let cr = tiered_cost(self.cache_read, pricing.cache_read, pricing.cache_read_above_200k);
+        input + output + cw + cw_1h + cr
     }
 }
 
@@ -74,8 +120,7 @@ pub struct UsageBucket {
     pub input_tokens: u64,
     pub output_tokens: u64,
     pub cache_read_tokens: u64,
-    pub cache_write_5m_tokens: u64,
-    pub cache_write_1h_tokens: u64,
+    pub cache_write_tokens: u64,
     pub total_tokens: u64,
     pub cost_usd: f64,
 }
@@ -86,10 +131,9 @@ impl UsageBucket {
         self.input_tokens += s.input_tokens;
         self.output_tokens += s.output_tokens;
         self.cache_read_tokens += s.cache_read_tokens;
-        self.cache_write_5m_tokens += s.cache_write_5m_tokens;
-        self.cache_write_1h_tokens += s.cache_write_1h_tokens;
+        self.cache_write_tokens += s.cache_write_tokens;
         self.total_tokens += s.total_tokens();
-        self.cost_usd += s.estimated_cost_usd();
+        self.cost_usd += s.cost_usd;
     }
 }
 
@@ -143,6 +187,17 @@ pub fn compute_stats(claude_home: &Path) -> StatsReport {
                 continue;
             }
 
+            // Skip in-progress transcripts (modified within last 60 seconds)
+            if let Ok(meta) = file_path.metadata() {
+                if let Ok(modified) = meta.modified() {
+                    if let Ok(age) = SystemTime::now().duration_since(modified) {
+                        if age.as_secs() < 60 {
+                            continue;
+                        }
+                    }
+                }
+            }
+
             let usages = parse_transcript(&file_path, &project_name);
             sessions.extend(usages);
         }
@@ -189,7 +244,7 @@ pub fn compute_stats(claude_home: &Path) -> StatsReport {
 
 /// Parse a single transcript .jsonl file for usage data.
 /// Returns multiple SessionUsage entries — one per day the session was active.
-/// This ensures tokens are attributed to the actual day they were consumed.
+/// Cost is computed per-message with tiered pricing, then accumulated per-day.
 fn parse_transcript(path: &Path, project_name: &str) -> Vec<SessionUsage> {
     let content = match std::fs::read_to_string(path) {
         Ok(c) => c,
@@ -201,17 +256,14 @@ fn parse_transcript(path: &Path, project_name: &str) -> Vec<SessionUsage> {
     let mut daily: HashMap<NaiveDate, SessionUsage> = HashMap::new();
 
     for line in content.lines() {
-
         // Only process lines with usage or model data
         if !line.contains("\"usage\"") && !line.contains("\"model\"") {
             continue;
         }
         if let Ok(val) = serde_json::from_str::<serde_json::Value>(line) {
-            // Extract model (first one wins)
-            if model.is_empty() {
-                if let Some(m) = val.get("message").and_then(|m| m.get("model")).and_then(|v| v.as_str()) {
-                    model = m.to_string();
-                }
+            // Extract model — update per message (can change mid-session)
+            if let Some(m) = val.get("message").and_then(|m| m.get("model")).and_then(|v| v.as_str()) {
+                model = m.to_string();
             }
 
             // Extract timestamp for this message → determine which day
@@ -222,32 +274,45 @@ fn parse_transcript(path: &Path, project_name: &str) -> Vec<SessionUsage> {
             if let Some(u) = val.get("message").and_then(|m| m.get("usage")) {
                 let date = msg_date.unwrap_or_else(|| Utc::now().date_naive());
 
+                // Extract per-message token counts
+                let input = u.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                let output = u.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                let cache_read = u.get("cache_read_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+
+                let (cache_write, cache_write_1h) = if let Some(cc) = u.get("cache_creation") {
+                    (
+                        cc.get("ephemeral_5m_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0),
+                        cc.get("ephemeral_1h_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0),
+                    )
+                } else {
+                    (u.get("cache_creation_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0), 0)
+                };
+
+                // Compute per-message cost with tiered pricing
+                let msg = MessageTokens { input, output, cache_read, cache_write, cache_write_1h };
+                let pricing = get_pricing(&model);
+                let msg_cost = msg.cost(&pricing);
+
+                // Accumulate into daily bucket
                 let day_usage = daily.entry(date).or_insert_with(|| SessionUsage {
                     date: Some(date),
                     project: project_name.to_string(),
-                    model: model.clone(),
                     ..Default::default()
                 });
 
-                day_usage.input_tokens += u.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-                day_usage.output_tokens += u.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-                day_usage.cache_read_tokens += u.get("cache_read_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-
-                if let Some(cc) = u.get("cache_creation") {
-                    day_usage.cache_write_5m_tokens += cc.get("ephemeral_5m_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-                    day_usage.cache_write_1h_tokens += cc.get("ephemeral_1h_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-                } else {
-                    day_usage.cache_write_5m_tokens += u.get("cache_creation_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-                }
+                day_usage.input_tokens += input;
+                day_usage.output_tokens += output;
+                day_usage.cache_read_tokens += cache_read;
+                day_usage.cache_write_tokens += cache_write + cache_write_1h;
+                day_usage.cost_usd += msg_cost;
             }
         }
     }
 
     // Return all daily entries (skip empty)
-    let results: Vec<SessionUsage> = daily.into_values()
+    daily.into_values()
         .filter(|u| u.total_tokens() > 0)
-        .collect();
-    results
+        .collect()
 }
 
 /// Convert a project directory name to a readable name.

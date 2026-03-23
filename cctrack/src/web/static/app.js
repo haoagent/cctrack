@@ -132,7 +132,7 @@
       var name = agent.name || '\u2014';
       var status = agent.status || 'Unknown';
       var statusClass = status.toLowerCase();
-      var tokens = agent.tokens ? (agent.tokens.input_tokens + agent.tokens.output_tokens + agent.tokens.cache_read_tokens + agent.tokens.cache_create_tokens) : 0;
+      var tokens = agent.tokens ? (agent.tokens.input_tokens + agent.tokens.output_tokens + agent.tokens.cache_read_tokens + (agent.tokens.cache_create_5m_tokens || 0) + (agent.tokens.cache_create_1h_tokens || 0)) : 0;
       var tokensStr = tokens > 0 ? formatTokens(tokens) : '\u2014';
       var cost = agent.tokens ? estimateCost(agent.tokens) : 0;
       var costStr = cost > 0 ? '$' + cost.toFixed(2) : '\u2014';
@@ -280,13 +280,15 @@
     return String(n);
   }
 
-  // Opus 4.6 pricing: $5/$25 input/output, cache_write $6.25, cache_read $0.50 per MTok
+  // Use pre-computed cost from server (tiered pricing), fallback to flat rate estimate
   function estimateCost(tokens) {
+    if (tokens.cost_usd && tokens.cost_usd > 0) return tokens.cost_usd;
     var input = tokens.input_tokens / 1000000 * 5;
     var output = tokens.output_tokens / 1000000 * 25;
-    var cacheWrite = tokens.cache_create_tokens / 1000000 * 6.25;
+    var cw5m = (tokens.cache_create_5m_tokens || 0) / 1000000 * 6.25;
+    var cw1h = (tokens.cache_create_1h_tokens || 0) / 1000000 * 10;
     var cacheRead = tokens.cache_read_tokens / 1000000 * 0.50;
-    return input + output + cacheWrite + cacheRead;
+    return input + output + cw5m + cw1h + cacheRead;
   }
 
   function taskSymbol(status) {
