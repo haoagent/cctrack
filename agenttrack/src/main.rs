@@ -1,6 +1,6 @@
 use clap::Parser;
 
-use cctrack::{collector, config::Config, store, tui, web};
+use cctrack::{collector, config::Config, stats, store, tui, web};
 use store::event::StoreSnapshot;
 
 #[derive(Parser)]
@@ -37,6 +37,8 @@ enum Commands {
         #[command(subcommand)]
         action: HooksAction,
     },
+    /// Show usage statistics (tokens, cost) from all sessions
+    Stats,
 }
 
 #[derive(clap::Subcommand)]
@@ -59,6 +61,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Handle subcommands
     match &cli.command {
+        Some(Commands::Stats) => {
+            let claude_home = Config::claude_home();
+            let report = stats::compute_stats(&claude_home);
+            stats::print_stats(&report);
+            return Ok(());
+        }
         Some(Commands::Hooks { action }) => {
             let claude_home = Config::claude_home();
             match action {

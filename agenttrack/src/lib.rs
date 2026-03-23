@@ -3,3 +3,4 @@ pub mod store;
 pub mod collector;
 pub mod tui;
 pub mod web;
+pub mod stats;
