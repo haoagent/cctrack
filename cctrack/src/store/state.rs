@@ -19,7 +19,10 @@ struct TeamState {
     /// Dedup key: (from, timestamp)
     message_keys: Vec<(String, String)>,
     tool_events: Vec<ToolEvent>,
+    last_activity_at: std::time::Instant,
 }
+
+const TEAM_EXPIRE_SECS: u64 = 3600; // 60 minutes → hide from tab bar
 
 impl TeamState {
     fn new(config: TeamConfig) -> Self {
@@ -45,6 +48,7 @@ impl TeamState {
             messages: Vec::new(),
             message_keys: Vec::new(),
             tool_events: Vec::new(),
+            last_activity_at: std::time::Instant::now(),
         }
     }
 
@@ -204,6 +208,14 @@ impl TeamState {
             self.tool_events.remove(0);
         }
         self.tool_events.push(event);
+        self.last_activity_at = std::time::Instant::now();
+    }
+
+    /// Check if team is expired: all agents shutdown + no activity for 60 min.
+    fn is_expired(&self) -> bool {
+        let all_shutdown = !self.agents.is_empty()
+            && self.agents.iter().all(|a| a.status == AgentStatus::Shutdown);
+        all_shutdown && self.last_activity_at.elapsed().as_secs() >= TEAM_EXPIRE_SECS
     }
 
     /// Compute metrics from current state.
@@ -281,14 +293,72 @@ struct UnregisteredSession {
     agent: Agent,
     tool_events: Vec<ToolEvent>,
     todos: Vec<TodoItem>,
+    last_event_at: std::time::Instant,
+    has_custom_name: bool,
+    cwd_name: String,
+    transcript_path: Option<String>,
 }
+
+const IDLE_TIMEOUT_SECS: u64 = 300;     // 5 minutes → Idle
+const ENDED_TIMEOUT_SECS: u64 = 1800;   // 30 minutes → Shutdown
 
 impl UnregisteredSession {
     fn push_tool_event(&mut self, event: ToolEvent) {
+        // Update transcript_path if we get one
+        if self.transcript_path.is_none() {
+            if let Some(ref tp) = event.transcript_path {
+                self.transcript_path = Some(tp.clone());
+            }
+        }
+
         if self.tool_events.len() >= TOOL_EVENT_RING_SIZE {
             self.tool_events.remove(0);
         }
         self.tool_events.push(event);
+        self.last_event_at = std::time::Instant::now();
+        self.agent.status = AgentStatus::Active;
+
+        // Retry reading transcript title + model if we don't have them yet
+        if let Some(ref tp) = self.transcript_path {
+            if !self.has_custom_name {
+                if let Some(title) = crate::collector::hook_server::read_session_title(tp) {
+                    if self.cwd_name.is_empty() || title.starts_with(&self.cwd_name) {
+                        self.agent.name = title;
+                    } else {
+                        self.agent.name = format!("{}: {}", self.cwd_name, title);
+                    }
+                    self.has_custom_name = true;
+                }
+            }
+            if self.agent.model.is_none() {
+                self.agent.model = crate::collector::hook_server::read_session_model(tp);
+            }
+        }
+    }
+
+    /// Update status based on transcript file modification time.
+    /// More accurate than hook-based timing because Claude writes to
+    /// the transcript even when not calling tools (thinking, generating).
+    fn update_timeout_status(&mut self) {
+        if self.agent.status == AgentStatus::Shutdown {
+            return;
+        }
+
+        // Prefer transcript file mtime over last hook event time
+        let elapsed_secs = self.transcript_path.as_deref()
+            .and_then(|p| std::fs::metadata(p).ok())
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.elapsed().ok())
+            .map(|d| d.as_secs())
+            .unwrap_or_else(|| self.last_event_at.elapsed().as_secs());
+
+        if elapsed_secs >= ENDED_TIMEOUT_SECS {
+            self.agent.status = AgentStatus::Shutdown;
+        } else if elapsed_secs >= IDLE_TIMEOUT_SECS {
+            self.agent.status = AgentStatus::Idle;
+        } else {
+            self.agent.status = AgentStatus::Active;
+        }
     }
 }
 
@@ -319,10 +389,12 @@ impl Store {
         let mut all_sessions: HashMap<String, Agent> = HashMap::new();
         // Global todos: session_id → latest todo list (for ALL tab)
         let mut global_todos: HashMap<String, Vec<TodoItem>> = HashMap::new();
-        // Track pending Agent tool spawns: (cwd, timestamp) for subagent detection
-        let mut pending_spawns: Vec<(String, std::time::Instant)> = Vec::new();
+        // Track pending Agent tool spawns: (cwd, parent_session_id, timestamp)
+        let mut pending_spawns: Vec<(String, String, std::time::Instant)> = Vec::new();
         // Known child session_ids (spawned by Agent tool)
         let mut child_sessions: std::collections::HashSet<String> = std::collections::HashSet::new();
+        // Dynamic session teams: parent_session_id → team_name
+        let mut session_teams: HashMap<String, String> = HashMap::new();
 
         while let Some(event) = rx.recv().await {
             match event {
@@ -368,6 +440,7 @@ impl Store {
                 Event::ToolCall(tool_event) => {
                     let session_id = &tool_event.agent_name;
                     let mut found = false;
+                    let mut parent_id: Option<String> = None;
 
                     // 1. Match by agent name/id in existing teams
                     for state in teams.values_mut() {
@@ -397,35 +470,37 @@ impl Store {
                             session.push_tool_event(tool_event.clone());
                         } else {
                             // Detect subagent: if an Agent tool was called from same cwd recently
-                            let is_subagent = if let Some(cwd) = tool_event.cwd.as_deref() {
+                            parent_id = if let Some(cwd) = tool_event.cwd.as_deref() {
                                 let now = std::time::Instant::now();
-                                // Clean up old spawns (> 60s)
-                                pending_spawns.retain(|(_, ts)| now.duration_since(*ts).as_secs() < 60);
-                                pending_spawns.iter().any(|(spawn_cwd, _)| spawn_cwd == cwd)
+                                pending_spawns.retain(|(_, _, ts)| now.duration_since(*ts).as_secs() < 60);
+                                pending_spawns.iter()
+                                    .find(|(spawn_cwd, _, _)| spawn_cwd == cwd)
+                                    .map(|(_, pid, _)| pid.clone())
                             } else {
-                                false
+                                None
                             };
+                            let is_subagent = parent_id.is_some();
 
                             if is_subagent {
                                 child_sessions.insert(session_id.to_string());
                             }
 
-                            // Session name: transcript title > CWD dir > session_id
-                            let title = tool_event.transcript_path.as_deref()
-                                .and_then(|p| crate::collector::hook_server::read_session_title(p));
+                            // Initial name: CWD dir > truncated session_id
+                            // Transcript title will be combined later via push_tool_event retry
                             let cwd_name = tool_event.cwd.as_deref()
                                 .and_then(|p| std::path::Path::new(p).file_name())
                                 .and_then(|f| f.to_str())
-                                .map(String::from);
-                            let base_name = title
-                                .or(cwd_name)
-                                .unwrap_or_else(|| {
-                                    if session_id.len() > 8 {
-                                        format!("session-{}", &session_id[..8])
-                                    } else {
-                                        session_id.to_string()
-                                    }
-                                });
+                                .map(String::from)
+                                .unwrap_or_default();
+                            let base_name = if cwd_name.is_empty() {
+                                if session_id.len() > 8 {
+                                    format!("session-{}", &session_id[..8])
+                                } else {
+                                    session_id.to_string()
+                                }
+                            } else {
+                                cwd_name.clone()
+                            };
 
                             // Deduplicate name among unregistered + team agents
                             let name_exists = |name: &str| {
@@ -457,13 +532,17 @@ impl Store {
                                 },
                                 tool_events: Vec::new(),
                                 todos: Vec::new(),
+                                last_event_at: std::time::Instant::now(),
+                                has_custom_name: false,
+                                cwd_name,
+                                transcript_path: tool_event.transcript_path.clone(),
                             };
                             session.push_tool_event(tool_event.clone());
                             unregistered.push(session);
                         }
 
-                        // Track in all_sessions — only top-level sessions (not team members, not subagents)
-                        if !child_sessions.contains(session_id) && !all_sessions.contains_key(session_id) {
+                        // Track in all_sessions — all sessions including subagents (not team members)
+                        if !all_sessions.contains_key(session_id) {
                             if let Some(agent) = unregistered.iter().find(|s| s.agent.agent_id == *session_id).map(|s| s.agent.clone()) {
                                 all_sessions.insert(session_id.to_string(), agent);
                             }
@@ -473,7 +552,47 @@ impl Store {
                     // Record Agent tool calls for subagent detection
                     if tool_event.tool_name == "Agent" {
                         if let Some(cwd) = tool_event.cwd.as_deref() {
-                            pending_spawns.push((cwd.to_string(), std::time::Instant::now()));
+                            pending_spawns.push((cwd.to_string(), session_id.to_string(), std::time::Instant::now()));
+                        }
+                    }
+
+                    // Create dynamic tab for sessions with sub-agents
+                    if let Some(ref pid) = parent_id {
+                        if !session_teams.contains_key(pid) {
+                            // Get parent's display name
+                            let parent_name = unregistered.iter()
+                                .find(|s| s.agent.agent_id == *pid)
+                                .map(|s| s.agent.name.clone())
+                                .or_else(|| all_sessions.get(pid).map(|a| a.name.clone()))
+                                .unwrap_or_else(|| format!("session-{}", &pid[..8.min(pid.len())]));
+                            let team_name = format!("session:{}", parent_name);
+                            session_teams.insert(pid.clone(), team_name.clone());
+
+                            // Create the dynamic team with parent as first agent
+                            let mut ts = TeamState::new(TeamConfig {
+                                name: team_name.clone(),
+                                description: format!("Session: {}", parent_name),
+                                created_at: None,
+                                lead_agent_id: None,
+                                lead_session_id: Some(pid.clone()),
+                                members: Vec::new(),
+                            });
+                            // Add parent agent
+                            if let Some(parent) = unregistered.iter().find(|s| s.agent.agent_id == *pid) {
+                                ts.agents.push(parent.agent.clone());
+                            }
+                            teams.insert(team_name, ts);
+                        }
+                        // Add child to the dynamic team
+                        if let Some(team_name) = session_teams.get(pid) {
+                            if let Some(ts) = teams.get_mut(team_name) {
+                                if let Some(child) = unregistered.iter().find(|s| s.agent.agent_id == *session_id) {
+                                    if !ts.agents.iter().any(|a| a.agent_id == *session_id) {
+                                        ts.agents.push(child.agent.clone());
+                                    }
+                                }
+                                ts.push_tool_event(tool_event.clone());
+                            }
                         }
                     }
 
@@ -529,6 +648,21 @@ impl Store {
                     // Store globally for ALL tab
                     global_todos.insert(session_id, todos);
                 }
+                Event::Tick => {
+                    // Just triggers the timeout check + snapshot rebuild below
+                }
+            }
+
+            // Update timeout-based status for unregistered sessions
+            for session in unregistered.iter_mut() {
+                session.update_timeout_status();
+            }
+            // Sync status + name updates to all_sessions
+            for session in &unregistered {
+                if let Some(s) = all_sessions.get_mut(&session.agent.agent_id) {
+                    s.status = session.agent.status.clone();
+                    s.name = session.agent.name.clone();
+                }
             }
 
             // Build ALL snapshot — only sessions that have actually sent events
@@ -557,8 +691,9 @@ impl Store {
                 metrics: all_metrics,
             };
 
-            // Build per-team snapshots (sorted by name)
+            // Build per-team snapshots (sorted by name, hide expired teams)
             let mut team_snapshots: Vec<TeamSnapshot> = teams.values()
+                .filter(|ts| !ts.is_expired())
                 .map(|ts| ts.snapshot())
                 .collect();
             team_snapshots.sort_by(|a, b| a.name.cmp(&b.name));

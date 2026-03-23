@@ -8,7 +8,7 @@ pub mod activity_panel;
 pub mod messages_panel;
 pub mod stats_panel;
 
-use std::io;
+use std::io::{self, Write};
 use std::time::Duration;
 
 use crossterm::{
@@ -20,7 +20,6 @@ use ratatui::{
     Frame,
     backend::CrosstermBackend,
     layout::Alignment,
-    style::{Color, Style},
     text::{Line, Span},
     widgets::Paragraph,
     Terminal,
@@ -36,6 +35,10 @@ use app_state::AppState;
 pub async fn run_tui(
     snapshot_rx: watch::Receiver<StoreSnapshot>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // Resize terminal window to 90x25
+    print!("\x1b[8;25;90t");
+    let _ = io::stdout().flush();
+
     // Setup terminal
     enable_raw_mode()?;
     io::stdout().execute(EnterAlternateScreen)?;
@@ -141,33 +144,29 @@ pub fn render(frame: &mut Frame, snapshot: &StoreSnapshot, app: &AppState, stats
     let bg_widget = ratatui::widgets::Block::default().style(theme::bg());
     frame.render_widget(bg_widget, frame.area());
 
-    let areas = layout::build_layout(frame.area());
+    let is_all = app.selected_team_index == 0;
+    let areas = if is_all {
+        layout::build_layout_all(frame.area())
+    } else {
+        layout::build_layout_team(frame.area())
+    };
 
     // Top tab bar (always visible)
     top_bar::render(frame, areas.top_bar, app, snapshot);
 
     if let Some(team) = snapshot.teams.get(app.selected_team_index).or(snapshot.teams.first()) {
-        let is_all = app.selected_team_index == 0;
-
         agents_panel::render(frame, areas.agents, team, app);
 
         if is_all {
-            // ALL tab: Sessions + Stats (top), Activity (bottom)
             stats_panel::render(frame, areas.tasks, stats_report);
         } else {
-            // Team tab: Agents + Todos (top)
             tasks_panel::render(frame, areas.tasks, team, app);
         }
 
         activity_panel::render(frame, areas.activity, team, app);
 
-        if is_all {
-            // ALL tab: no messages panel — use space for more activity
-            // (messages area still rendered but empty is fine)
-            let empty = Paragraph::new("").style(theme::bg());
-            frame.render_widget(empty, areas.messages);
-        } else {
-            messages_panel::render(frame, areas.messages, team, app);
+        if let Some(messages_area) = areas.messages {
+            messages_panel::render(frame, messages_area, team, app);
         }
     } else {
         let placeholder = Paragraph::new("Waiting for sessions...")
@@ -182,16 +181,17 @@ pub fn render(frame: &mut Frame, snapshot: &StoreSnapshot, app: &AppState, stats
 
 /// Render the bottom status bar: branding + keybindings only.
 fn render_status_bar(frame: &mut Frame, area: ratatui::layout::Rect) {
+    let key = theme::accent();
     let spans = vec![
         Span::styled(" cctrack@2026", theme::title()),
         Span::styled(" \u{2502} ", theme::border()),
-        Span::styled("Tab", Style::new().fg(Color::Cyan)),
+        Span::styled("Tab", key),
         Span::styled(" switch  ", theme::dim()),
-        Span::styled("\u{2190}\u{2192}", Style::new().fg(Color::Cyan)),
+        Span::styled("\u{2190}\u{2192}", key),
         Span::styled(" select  ", theme::dim()),
-        Span::styled("t", Style::new().fg(Color::Cyan)),
+        Span::styled("t", key),
         Span::styled(" theme  ", theme::dim()),
-        Span::styled("q", Style::new().fg(Color::Cyan)),
+        Span::styled("q", key),
         Span::styled(" quit", theme::dim()),
     ];
 

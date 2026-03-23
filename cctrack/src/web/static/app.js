@@ -2,26 +2,40 @@
 (function() {
   'use strict';
 
-  const eventSource = new EventSource('/api/sse');
-  let selectedTeamIndex = 0; // 0 = ALL
-  let latestSnapshot = null;
+  var selectedTeamIndex = 0;
+  var latestSnapshot = null;
+  var statsData = null;
 
-  eventSource.onmessage = function(event) {
-    try {
-      latestSnapshot = JSON.parse(event.data);
-      renderAll();
-    } catch (e) {
-      console.error('Failed to parse SSE data:', e);
-    }
-  };
+  // SSE with auto-reconnection
+  function connectSSE() {
+    var es = new EventSource('/api/sse');
+    es.onmessage = function(event) {
+      try {
+        latestSnapshot = JSON.parse(event.data);
+        renderAll();
+      } catch (e) {
+        console.error('Failed to parse SSE data:', e);
+      }
+    };
+    es.onerror = function() {
+      es.close();
+      setTimeout(connectSSE, 3000);
+    };
+  }
+  connectSSE();
 
-  eventSource.onerror = function() {
-    console.warn('SSE connection lost, reconnecting...');
-  };
+  // Fetch stats periodically (every 60s)
+  function fetchStats() {
+    fetch('/api/stats')
+      .then(function(r) { return r.json(); })
+      .then(function(data) { statsData = data; renderAll(); })
+      .catch(function() {});
+  }
+  fetchStats();
+  setInterval(fetchStats, 60000);
 
   function renderAll() {
     if (!latestSnapshot || !latestSnapshot.teams || latestSnapshot.teams.length === 0) {
-      renderEmpty();
       return;
     }
     renderTabBar(latestSnapshot.teams);
@@ -44,7 +58,6 @@
         '</button>';
     }).join('');
 
-    // Bind click events
     bar.querySelectorAll('.tab').forEach(function(btn) {
       btn.onclick = function() {
         selectedTeamIndex = parseInt(btn.dataset.index, 10);
@@ -54,38 +67,54 @@
   }
 
   function renderTeam(team) {
-    // Dynamic labels: ALL tab = "Sessions", team tab = "Agents"
     var isAll = team.name === 'all';
+
+    // Filter agents first, then use for everything
+    var agents = team.agents || [];
+    if (isAll) {
+      agents = agents.filter(function(a) { return a.status !== 'Shutdown'; });
+    }
+
+    // Dynamic labels
     var label = isAll ? 'Sessions' : 'Agents';
     document.getElementById('agent-label').textContent = label;
     document.getElementById('agents-panel-title').textContent = label;
     document.getElementById('agents-empty-title').textContent = isAll ? 'No sessions' : 'No agents';
 
     // Header stats
-    document.getElementById('agent-count').textContent = team.agents ? team.agents.length : 0;
-
+    document.getElementById('agent-count').textContent = agents.length;
     var todoDone = team.todos ? team.todos.filter(function(t) { return t.status === 'completed'; }).length : 0;
     var todoTotal = team.todos ? team.todos.length : 0;
     document.getElementById('todo-progress').textContent = todoDone + '/' + todoTotal;
     document.getElementById('event-count').textContent = team.tool_events ? team.tool_events.length : 0;
-
     var costUsd = team.metrics ? team.metrics.estimated_cost_usd : 0;
     document.getElementById('total-cost').textContent = '$' + costUsd.toFixed(2);
 
-    renderAgents(team.agents || []);
-    renderTodos(team.todos || []);
-    renderActivity(team.tool_events || []);
-    renderMessages(team.messages || []);
-  }
+    renderAgents(agents);
 
-  function renderEmpty() {
-    document.getElementById('tab-bar').innerHTML = '';
-    document.getElementById('agent-count').textContent = '0';
-    document.getElementById('task-progress').textContent = '0/0';
-    document.getElementById('event-count').textContent = '0';
-    document.getElementById('total-cost').textContent = '$0.00';
-    document.getElementById('agents-body').innerHTML = '';
-    document.getElementById('agents-empty').style.display = 'block';
+    // ALL tab: show Stats; Team tab: show Todos
+    var statsPanel = document.getElementById('stats-panel');
+    var todosPanel = document.getElementById('todos-panel');
+    if (isAll) {
+      statsPanel.style.display = '';
+      todosPanel.style.display = 'none';
+      renderStats(statsData);
+    } else {
+      statsPanel.style.display = 'none';
+      todosPanel.style.display = '';
+      renderTodos(team.todos || []);
+    }
+
+    renderActivity(team.tool_events || [], isAll);
+
+    // ALL tab: hide messages panel
+    var messagesPanel = document.getElementById('messages-panel');
+    if (isAll) {
+      messagesPanel.style.display = 'none';
+    } else {
+      messagesPanel.style.display = '';
+      renderMessages(team.messages || []);
+    }
   }
 
   function renderAgents(agents) {
@@ -118,6 +147,40 @@
     }).join('');
   }
 
+  function renderStats(stats) {
+    var body = document.getElementById('stats-body');
+    if (!stats) {
+      body.innerHTML = '<tr><td colspan="4" style="color:var(--text-muted);text-align:center">Loading...</td></tr>';
+      return;
+    }
+
+    var periods = [stats.today, stats.this_week, stats.this_month, stats.total];
+    var html = periods.map(function(p) {
+      var isBold = p.label === 'Total';
+      var style = isBold ? 'font-weight:600' : '';
+      return '<tr style="' + style + '">' +
+        '<td>' + esc(p.label) + '</td>' +
+        '<td style="text-align:right">' + p.sessions + '</td>' +
+        '<td style="text-align:right;color:var(--text-muted)">' + formatTokens(p.total_tokens) + '</td>' +
+        '<td style="text-align:right;color:var(--green-bright)">$' + p.cost_usd.toFixed(2) + '</td>' +
+        '</tr>';
+    }).join('');
+
+    if (stats.by_project && stats.by_project.length > 0) {
+      html += '<tr><td colspan="4" style="font-weight:600;padding-top:12px;border-bottom:none">By Project</td></tr>';
+      html += stats.by_project.slice(0, 8).map(function(p) {
+        return '<tr>' +
+          '<td>' + esc(p.label) + '</td>' +
+          '<td style="text-align:right">' + p.sessions + '</td>' +
+          '<td style="text-align:right;color:var(--text-muted)">' + formatTokens(p.total_tokens) + '</td>' +
+          '<td style="text-align:right;color:var(--green-bright)">$' + p.cost_usd.toFixed(2) + '</td>' +
+          '</tr>';
+      }).join('');
+    }
+
+    body.innerHTML = html;
+  }
+
   function renderTodos(todos) {
     var tbody = document.getElementById('todos-body');
     var empty = document.getElementById('todos-empty');
@@ -142,7 +205,7 @@
     }).join('');
   }
 
-  function renderActivity(events) {
+  function renderActivity(events, isAll) {
     var feed = document.getElementById('activity-feed');
     var empty = document.getElementById('activity-empty');
 
@@ -153,8 +216,7 @@
     }
     empty.style.display = 'none';
 
-    // Show last 50 events, most recent first
-    var recent = events.slice(-50).reverse();
+    var recent = events.slice(-50); // chronological, newest at bottom (tail style)
     feed.innerHTML = recent.map(function(ev) {
       var time = formatTime(ev.timestamp);
       var tool = ev.tool_name || '?';
@@ -162,10 +224,18 @@
       var summary = ev.summary || '';
       var duration = ev.duration_ms ? ' ' + ev.duration_ms + 'ms' : '';
 
+      // Show session name from cwd (like TUI does)
+      var sessionLabel = '';
+      if (isAll && ev.cwd) {
+        var parts = ev.cwd.split('/');
+        sessionLabel = parts[parts.length - 1] || '';
+      }
+
       return '<div class="feed-item">' +
         '<span class="time">' + esc(time) + '</span>' +
+        (sessionLabel ? '<span class="session-label">' + esc(sessionLabel) + '</span>' : '') +
         '<span class="' + toolClass + '" style="min-width:50px">' + esc(tool) + '</span>' +
-        '<span>' + esc(truncate(summary, 80)) + '</span>' +
+        '<span class="feed-summary">' + esc(truncate(summary, 80)) + '</span>' +
         '<span class="time">' + esc(duration) + '</span>' +
         '</div>';
     }).join('');
@@ -175,7 +245,6 @@
     var feed = document.getElementById('messages-feed');
     var empty = document.getElementById('messages-empty');
 
-    // Filter out idle notifications
     var filtered = messages.filter(function(m) {
       return m.msg_type !== 'idle_notification';
     });
@@ -187,7 +256,6 @@
     }
     empty.style.display = 'none';
 
-    // Show last 50 messages
     var recent = filtered.slice(-50);
     feed.innerHTML = recent.map(function(msg) {
       var time = formatTime(msg.timestamp);
@@ -212,11 +280,13 @@
     return String(n);
   }
 
+  // Opus 4.6 pricing: $5/$25 input/output, cache_write $6.25, cache_read $0.50 per MTok
   function estimateCost(tokens) {
-    var input = (tokens.input_tokens + tokens.cache_create_tokens) / 1000000 * 15;
-    var output = tokens.output_tokens / 1000000 * 75;
-    var cache = tokens.cache_read_tokens / 1000000 * 1.5;
-    return input + output + cache;
+    var input = tokens.input_tokens / 1000000 * 5;
+    var output = tokens.output_tokens / 1000000 * 25;
+    var cacheWrite = tokens.cache_create_tokens / 1000000 * 6.25;
+    var cacheRead = tokens.cache_read_tokens / 1000000 * 0.50;
+    return input + output + cacheWrite + cacheRead;
   }
 
   function taskSymbol(status) {

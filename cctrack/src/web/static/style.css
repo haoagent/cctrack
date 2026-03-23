@@ -233,6 +233,19 @@ tr:hover {
   color: var(--text-muted);
 }
 
+.feed-item .session-label {
+  color: var(--blue-bright);
+  min-width: 80px;
+  font-weight: 600;
+}
+
+.feed-item .feed-summary {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Tool colors */
 .tool-read { color: var(--blue-bright); }
 .tool-edit { color: var(--yellow); }

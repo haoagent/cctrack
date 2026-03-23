@@ -32,7 +32,7 @@ pub fn render(frame: &mut Frame, area: Rect, report: &StatsReport) {
         Row::new(vec![
             Cell::from(Span::styled(&p.label, label_style)),
             Cell::from(Span::styled(format!("{}", p.sessions), theme::dim())),
-            Cell::from(Span::styled(format_tokens(p.total_tokens), theme::text())),
+            Cell::from(Span::styled(format_tokens(p.total_tokens), theme::dim())),
             Cell::from(Span::styled(cost_str, theme::cost_style())),
         ])
     }).collect();
@@ -51,7 +51,7 @@ pub fn render(frame: &mut Frame, area: Rect, report: &StatsReport) {
             rows.push(Row::new(vec![
                 Cell::from(Span::styled(&p.label, theme::dim())),
                 Cell::from(Span::styled(format!("{}", p.sessions), theme::dim())),
-                Cell::from(Span::styled(format_tokens(p.total_tokens), theme::text())),
+                Cell::from(Span::styled(format_tokens(p.total_tokens), theme::dim())),
                 Cell::from(Span::styled(cost_str, theme::cost_style())),
             ]));
         }

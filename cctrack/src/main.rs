@@ -115,6 +115,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         event_tx.clone(),
     ));
 
+    // Scan recent transcripts to pre-populate sessions
+    {
+        let tx = event_tx.clone();
+        let home = claude_home.clone();
+        tokio::spawn(async move {
+            collector::startup_scan::scan_recent(&home, tx).await;
+        });
+    }
+
+    // Periodic tick for timeout-based status refresh (every 30s)
+    {
+        let tx = event_tx.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+                let _ = tx.send(store::event::Event::Tick).await;
+            }
+        });
+    }
+
     // Determine web port
     let web_port = if cli.port != 7891 {
         cli.port

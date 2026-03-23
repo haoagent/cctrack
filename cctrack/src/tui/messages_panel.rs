@@ -1,7 +1,7 @@
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Color, Modifier, Style},
+    style::Modifier,
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem},
 };
@@ -60,15 +60,7 @@ pub fn render(frame: &mut Frame, area: Rect, team: &TeamSnapshot, app: &AppState
                     msg.summary.clone()
                 };
 
-                let from_style = match msg.msg_type {
-                    MessageType::TaskCompleted => Style::new().fg(Color::Green),
-                    MessageType::PlanApproval => Style::new()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD),
-                    MessageType::ShutdownNotification => theme::dim(),
-                    MessageType::Broadcast => Style::new().fg(Color::Magenta),
-                    _ => Style::new().fg(Color::Cyan),
-                };
+                let from_style = theme::message_type_style(&msg.msg_type);
 
                 let line = Line::from(vec![
                     Span::styled(time, theme::dim()),

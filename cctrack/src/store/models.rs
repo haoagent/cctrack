@@ -163,14 +163,26 @@ impl TokenUsage {
         self.input_tokens + self.output_tokens + self.cache_read_tokens + self.cache_create_tokens
     }
 
-    /// Estimate cost in USD. Defaults to Opus 4.6 pricing (Claude Code default).
-    /// $5/$25 input/output, cache_write 5min: $6.25, cache_read: $0.50/MTok
-    /// Without cache duration breakdown, treats all cache_create as 5min.
+    /// Estimate cost in USD using per-model pricing.
+    /// Falls back to Sonnet pricing if model unknown (most common in Claude Code).
     pub fn estimated_cost_usd(&self) -> f64 {
-        let input = self.input_tokens as f64 / 1_000_000.0 * 5.0;
-        let output = self.output_tokens as f64 / 1_000_000.0 * 25.0;
-        let cache_w = self.cache_create_tokens as f64 / 1_000_000.0 * 6.25;
-        let cache_r = self.cache_read_tokens as f64 / 1_000_000.0 * 0.50;
+        self.estimated_cost_for_model(None)
+    }
+
+    /// Estimate cost with explicit model name.
+    pub fn estimated_cost_for_model(&self, model: Option<&str>) -> f64 {
+        let (inp_rate, out_rate, cw_rate, cr_rate) = match model {
+            Some(m) if m.to_lowercase().contains("opus") =>
+                (5.0, 25.0, 6.25, 0.50),    // Opus 4.5/4.6
+            Some(m) if m.to_lowercase().contains("haiku") =>
+                (1.0, 5.0, 1.25, 0.10),     // Haiku 4.5
+            _ =>
+                (3.0, 15.0, 3.75, 0.30),    // Sonnet 4.5/4.6 (default)
+        };
+        let input = self.input_tokens as f64 / 1_000_000.0 * inp_rate;
+        let output = self.output_tokens as f64 / 1_000_000.0 * out_rate;
+        let cache_w = self.cache_create_tokens as f64 / 1_000_000.0 * cw_rate;
+        let cache_r = self.cache_read_tokens as f64 / 1_000_000.0 * cr_rate;
         input + output + cache_w + cache_r
     }
 }

@@ -259,16 +259,19 @@ fn project_dir_to_name(path: &Path) -> String {
 
     // Claude Code encodes paths with dashes: "-Users-jerry-Documents-Clipal"
     // Take the last non-empty segment
-    if dir_name.starts_with('-') {
-        let name = dir_name.rsplit('-')
+    let name = if dir_name.starts_with('-') {
+        dir_name.rsplit('-')
             .find(|s| !s.is_empty())
-            .unwrap_or("root");
-        if name.is_empty() { "root".to_string() } else { name.to_string() }
-    } else if dir_name == "." || dir_name == "-" || dir_name.is_empty() {
+            .unwrap_or("root")
+            .to_string()
+    } else if dir_name == "." || dir_name.is_empty() {
         "root".to_string()
     } else {
         dir_name.to_string()
-    }
+    };
+
+    // Final safety: never return empty
+    if name.is_empty() { "root".to_string() } else { name }
 }
 
 /// Format token count as compact string.

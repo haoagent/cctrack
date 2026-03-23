@@ -199,19 +199,25 @@ async fn handle_hook(
     StatusCode::OK
 }
 
-/// Read user's first message from transcript as a session title.
-/// Filters out file paths, commands, and other non-title content.
+/// Read user's first meaningful message from transcript as a session title.
+/// Tries all queue-operation entries in the first 30 lines.
 /// Returns a clean, meaningful title or None.
 pub fn read_session_title(path: &str) -> Option<String> {
     let file = std::fs::File::open(path).ok()?;
     let reader = std::io::BufReader::new(file);
     use std::io::BufRead;
-    for line in reader.lines().take(5) {
-        let line = line.ok()?;
+    for line in reader.lines().take(30) {
+        let line = match line {
+            Ok(l) => l,
+            Err(_) => continue,
+        };
         if let Ok(val) = serde_json::from_str::<serde_json::Value>(&line) {
             if val.get("type").and_then(|v| v.as_str()) == Some("queue-operation") {
                 if let Some(content) = val.get("content").and_then(|v| v.as_str()) {
-                    return clean_session_title(content);
+                    if let Some(title) = clean_session_title(content) {
+                        return Some(title);
+                    }
+                    // Keep trying other queue-operation entries
                 }
             }
         }
@@ -238,19 +244,32 @@ fn clean_session_title(content: &str) -> Option<String> {
         return None;
     }
 
-    let title: String = first_line.chars().take(40).collect();
+    let title: String = first_line.chars().take(32).collect();
     Some(title)
 }
 
-/// Read a transcript .jsonl file and sum all token usage.
-fn read_transcript_usage(path: &str) -> Option<TokenUsage> {
+/// Read a transcript .jsonl file and return (token usage, model name).
+pub fn read_transcript_usage(path: &str) -> Option<TokenUsage> {
+    let (usage, _model) = read_transcript_usage_and_model(path)?;
+    if usage.total() > 0 { Some(usage) } else { None }
+}
+
+/// Read transcript for both usage and model name.
+pub fn read_transcript_usage_and_model(path: &str) -> Option<(TokenUsage, Option<String>)> {
     let content = std::fs::read_to_string(path).ok()?;
     let mut usage = TokenUsage::default();
+    let mut model: Option<String> = None;
     for line in content.lines() {
-        if !line.contains("\"usage\"") {
+        if !line.contains("\"message\"") {
             continue;
         }
         if let Ok(val) = serde_json::from_str::<serde_json::Value>(line) {
+            // Extract model (first one wins)
+            if model.is_none() {
+                if let Some(m) = val.get("message").and_then(|m| m.get("model")).and_then(|v| v.as_str()) {
+                    model = Some(m.to_string());
+                }
+            }
             if let Some(u) = val.get("message").and_then(|m| m.get("usage")) {
                 usage.input_tokens += u.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
                 usage.output_tokens += u.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
@@ -259,7 +278,33 @@ fn read_transcript_usage(path: &str) -> Option<TokenUsage> {
             }
         }
     }
-    if usage.total() > 0 { Some(usage) } else { None }
+    if usage.total() > 0 || model.is_some() {
+        Some((usage, model))
+    } else {
+        None
+    }
+}
+
+/// Read just the model name from a transcript (first few lines).
+pub fn read_session_model(path: &str) -> Option<String> {
+    let file = std::fs::File::open(path).ok()?;
+    let reader = std::io::BufReader::new(file);
+    use std::io::BufRead;
+    for line in reader.lines().take(20) {
+        let line = match line {
+            Ok(l) => l,
+            Err(_) => continue,
+        };
+        if !line.contains("\"model\"") {
+            continue;
+        }
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&line) {
+            if let Some(m) = val.get("message").and_then(|m| m.get("model")).and_then(|v| v.as_str()) {
+                return Some(m.to_string());
+            }
+        }
+    }
+    None
 }
 
 /// Start the hook HTTP server. Tries ports `port` through `port + 9`.

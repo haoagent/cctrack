@@ -32,16 +32,17 @@ pub fn render(frame: &mut Frame, area: Rect, app: &AppState, snapshot: &StoreSna
 
             let dot_char = if has_active { "\u{25cf}" } else { "\u{25cb}" }; // ● or ○
 
+            // Tab label: "NAME (N)" where N = agent count (skip for ALL tab)
+            let agent_count = t.agents.len();
+            let tab_label = if is_all {
+                t.name.to_uppercase()
+            } else {
+                format!("{} ({})", t.name.to_uppercase(), agent_count)
+            };
+
             if is_selected {
                 let tab_bg = if is_all {
-                    // ALL tab: cyan-tinted bg to distinguish
-                    if theme::is_light_mode() {
-                        Color::Rgb(30, 60, 70)
-                    } else {
-                        Color::Rgb(30, 90, 100)
-                    }
-                } else if theme::is_light_mode() {
-                    Color::Rgb(50, 50, 70)
+                    Color::Rgb(30, 90, 100)
                 } else {
                     Color::Rgb(65, 105, 225) // royal blue
                 };
@@ -51,20 +52,20 @@ pub fn render(frame: &mut Frame, area: Rect, app: &AppState, snapshot: &StoreSna
                     .add_modifier(Modifier::BOLD);
                 let dot_style = Style::new()
                     .bg(tab_bg)
-                    .fg(if has_active { Color::Rgb(120, 220, 120) } else { Color::Rgb(150, 150, 150) });
+                    .fg(if has_active { Color::LightGreen } else { Color::DarkGray });
 
                 spans.push(Span::styled(" ", tab_style));
                 spans.push(Span::styled(format!("{} ", dot_char), dot_style));
-                spans.push(Span::styled(format!("{} ", t.name.to_uppercase()), tab_style));
+                spans.push(Span::styled(format!("{} ", tab_label), tab_style));
             } else {
                 let dot_style = if has_active {
-                    Style::new().fg(Color::Rgb(158, 206, 106))
+                    Style::new().fg(Color::LightGreen)
                 } else {
                     theme::dim()
                 };
                 spans.push(Span::styled("  ", theme::dim()));
                 spans.push(Span::styled(format!("{} ", dot_char), dot_style));
-                spans.push(Span::styled(format!("{} ", t.name.to_uppercase()), theme::dim()));
+                spans.push(Span::styled(format!("{} ", tab_label), theme::dim()));
             }
         }
     }

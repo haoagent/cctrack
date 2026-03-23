@@ -13,6 +13,8 @@ use tokio::sync::watch;
 use tokio_stream::wrappers::WatchStream;
 use tokio_stream::StreamExt;
 
+use crate::config::Config;
+use crate::stats;
 use crate::store::event::StoreSnapshot;
 
 #[derive(Embed)]
@@ -25,6 +27,7 @@ pub async fn run(port: u16, snapshot_rx: watch::Receiver<StoreSnapshot>) {
     let app = Router::new()
         .route("/", get(index_handler))
         .route("/api/sse", get(sse_handler))
+        .route("/api/stats", get(stats_handler))
         .route("/static/{*path}", get(static_handler))
         .with_state(snapshot_rx);
 
@@ -69,6 +72,12 @@ async fn static_handler(axum::extract::Path(path): axum::extract::Path<String>) 
         }
         None => (axum::http::StatusCode::NOT_FOUND, "Not found").into_response(),
     }
+}
+
+async fn stats_handler() -> axum::Json<stats::StatsReport> {
+    let claude_home = Config::claude_home();
+    let report = stats::compute_stats(&claude_home);
+    axum::Json(report)
 }
 
 async fn sse_handler(

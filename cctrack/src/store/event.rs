@@ -27,6 +27,8 @@ pub enum Event {
         session_id: String,
         todos: Vec<TodoItem>,
     },
+    /// Periodic tick to refresh timeout-based status.
+    Tick,
 }
 
 /// Immutable snapshot of all state, sent to the TUI and Web layers via `watch`.
