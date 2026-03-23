@@ -6,6 +6,7 @@ pub mod agents_panel;
 pub mod tasks_panel;
 pub mod activity_panel;
 pub mod messages_panel;
+pub mod stats_panel;
 
 use std::io;
 use std::time::Duration;
@@ -26,6 +27,8 @@ use ratatui::{
 };
 use tokio::sync::watch;
 
+use crate::config::Config;
+use crate::stats::{self, StatsReport};
 use crate::store::event::StoreSnapshot;
 use app_state::AppState;
 
@@ -42,15 +45,26 @@ pub async fn run_tui(
     let mut app = AppState::new();
     let mut last_snapshot = snapshot_rx.borrow().clone();
 
+    // Compute stats from transcripts (once at startup)
+    let claude_home = Config::claude_home();
+    let mut stats_report = stats::compute_stats(&claude_home);
+    let mut stats_refresh = std::time::Instant::now();
+
     loop {
         // Check for new snapshot
         if snapshot_rx.has_changed().unwrap_or(false) {
             last_snapshot = snapshot_rx.borrow().clone();
         }
 
+        // Refresh stats every 60 seconds
+        if stats_refresh.elapsed().as_secs() > 60 {
+            stats_report = stats::compute_stats(&claude_home);
+            stats_refresh = std::time::Instant::now();
+        }
+
         // Draw
         terminal.draw(|frame| {
-            render(frame, &last_snapshot, &app);
+            render(frame, &last_snapshot, &app, &stats_report);
         })?;
 
         // Handle input (poll with 100ms timeout)
@@ -122,7 +136,7 @@ fn panel_item_count(snapshot: &StoreSnapshot, app: &AppState) -> usize {
 }
 
 /// Main render entry point -- called once per frame by the TUI event loop.
-pub fn render(frame: &mut Frame, snapshot: &StoreSnapshot, app: &AppState) {
+pub fn render(frame: &mut Frame, snapshot: &StoreSnapshot, app: &AppState, stats_report: &StatsReport) {
     // Paint background
     let bg_widget = ratatui::widgets::Block::default().style(theme::bg());
     frame.render_widget(bg_widget, frame.area());
@@ -133,10 +147,28 @@ pub fn render(frame: &mut Frame, snapshot: &StoreSnapshot, app: &AppState) {
     top_bar::render(frame, areas.top_bar, app, snapshot);
 
     if let Some(team) = snapshot.teams.get(app.selected_team_index).or(snapshot.teams.first()) {
+        let is_all = app.selected_team_index == 0;
+
         agents_panel::render(frame, areas.agents, team, app);
-        tasks_panel::render(frame, areas.tasks, team, app);
+
+        if is_all {
+            // ALL tab: Sessions + Stats (top), Activity (bottom)
+            stats_panel::render(frame, areas.tasks, stats_report);
+        } else {
+            // Team tab: Agents + Todos (top)
+            tasks_panel::render(frame, areas.tasks, team, app);
+        }
+
         activity_panel::render(frame, areas.activity, team, app);
-        messages_panel::render(frame, areas.messages, team, app);
+
+        if is_all {
+            // ALL tab: no messages panel — use space for more activity
+            // (messages area still rendered but empty is fine)
+            let empty = Paragraph::new("").style(theme::bg());
+            frame.render_widget(empty, areas.messages);
+        } else {
+            messages_panel::render(frame, areas.messages, team, app);
+        }
     } else {
         let placeholder = Paragraph::new("Waiting for sessions...")
             .style(theme::dim())

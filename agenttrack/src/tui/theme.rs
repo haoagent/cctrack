@@ -77,6 +77,14 @@ pub fn text() -> Style {
     }
 }
 
+pub fn cost_style() -> Style {
+    if is_light() {
+        Style::new().fg(Color::Rgb(34, 139, 34))
+    } else {
+        Style::new().fg(Color::Rgb(63, 185, 80))
+    }
+}
+
 // ─── Agent status ───
 
 pub fn status_style(status: &AgentStatus) -> Style {
