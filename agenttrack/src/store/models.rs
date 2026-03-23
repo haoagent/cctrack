@@ -163,13 +163,14 @@ impl TokenUsage {
         self.input_tokens + self.output_tokens + self.cache_read_tokens + self.cache_create_tokens
     }
 
-    /// Estimate cost in USD. Defaults to Sonnet pricing (most common in Claude Code).
-    /// input: $3/MTok, output: $15/MTok, cache_write: $3.75/MTok, cache_read: $0.30/MTok
+    /// Estimate cost in USD. Defaults to Opus 4.6 pricing (Claude Code default).
+    /// $5/$25 input/output, cache_write 5min: $6.25, cache_read: $0.50/MTok
+    /// Without cache duration breakdown, treats all cache_create as 5min.
     pub fn estimated_cost_usd(&self) -> f64 {
-        let input = self.input_tokens as f64 / 1_000_000.0 * 3.0;
-        let output = self.output_tokens as f64 / 1_000_000.0 * 15.0;
-        let cache_w = self.cache_create_tokens as f64 / 1_000_000.0 * 3.75;
-        let cache_r = self.cache_read_tokens as f64 / 1_000_000.0 * 0.30;
+        let input = self.input_tokens as f64 / 1_000_000.0 * 5.0;
+        let output = self.output_tokens as f64 / 1_000_000.0 * 25.0;
+        let cache_w = self.cache_create_tokens as f64 / 1_000_000.0 * 6.25;
+        let cache_r = self.cache_read_tokens as f64 / 1_000_000.0 * 0.50;
         input + output + cache_w + cache_r
     }
 }

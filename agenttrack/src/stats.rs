@@ -9,25 +9,30 @@ use std::path::Path;
 use chrono::{NaiveDate, Utc, Datelike};
 use serde::Serialize;
 
-/// Per-model pricing ($/MTok)
+/// Per-model pricing ($/MTok) — Anthropic API March 2026
+/// Source: https://platform.claude.com/docs/en/about-claude/pricing
 struct ModelPricing {
     input: f64,
     output: f64,
-    cache_write: f64,  // 1.25x input
-    cache_read: f64,   // 0.1x input
+    cache_write_5m: f64,  // 1.25x input (ephemeral 5-minute)
+    cache_write_1h: f64,  // 2x input (ephemeral 1-hour)
+    cache_read: f64,      // 0.1x input
 }
 
 fn get_pricing(model: &str) -> ModelPricing {
     let m = model.to_lowercase();
     if m.contains("opus") {
-        ModelPricing { input: 15.0, output: 75.0, cache_write: 18.75, cache_read: 1.50 }
+        // Opus 4.5/4.6: $5/$25
+        ModelPricing { input: 5.0, output: 25.0, cache_write_5m: 6.25, cache_write_1h: 10.0, cache_read: 0.50 }
     } else if m.contains("sonnet") {
-        ModelPricing { input: 3.0, output: 15.0, cache_write: 3.75, cache_read: 0.30 }
+        // Sonnet 4.5/4.6: $3/$15
+        ModelPricing { input: 3.0, output: 15.0, cache_write_5m: 3.75, cache_write_1h: 6.0, cache_read: 0.30 }
     } else if m.contains("haiku") {
-        ModelPricing { input: 0.80, output: 4.0, cache_write: 1.0, cache_read: 0.08 }
+        // Haiku 4.5: $1/$5
+        ModelPricing { input: 1.0, output: 5.0, cache_write_5m: 1.25, cache_write_1h: 2.0, cache_read: 0.10 }
     } else {
-        // Default to Sonnet pricing (most common)
-        ModelPricing { input: 3.0, output: 15.0, cache_write: 3.75, cache_read: 0.30 }
+        // Default to Sonnet pricing (most common in Claude Code)
+        ModelPricing { input: 3.0, output: 15.0, cache_write_5m: 3.75, cache_write_1h: 6.0, cache_read: 0.30 }
     }
 }
 
@@ -40,21 +45,24 @@ struct SessionUsage {
     input_tokens: u64,
     output_tokens: u64,
     cache_read_tokens: u64,
-    cache_create_tokens: u64,
+    cache_write_5m_tokens: u64,
+    cache_write_1h_tokens: u64,
 }
 
 impl SessionUsage {
     fn total_tokens(&self) -> u64 {
-        self.input_tokens + self.output_tokens + self.cache_read_tokens + self.cache_create_tokens
+        self.input_tokens + self.output_tokens + self.cache_read_tokens
+            + self.cache_write_5m_tokens + self.cache_write_1h_tokens
     }
 
     fn estimated_cost_usd(&self) -> f64 {
         let p = get_pricing(&self.model);
         let input = self.input_tokens as f64 / 1_000_000.0 * p.input;
         let output = self.output_tokens as f64 / 1_000_000.0 * p.output;
-        let cache_w = self.cache_create_tokens as f64 / 1_000_000.0 * p.cache_write;
-        let cache_r = self.cache_read_tokens as f64 / 1_000_000.0 * p.cache_read;
-        input + output + cache_w + cache_r
+        let cw_5m = self.cache_write_5m_tokens as f64 / 1_000_000.0 * p.cache_write_5m;
+        let cw_1h = self.cache_write_1h_tokens as f64 / 1_000_000.0 * p.cache_write_1h;
+        let cr = self.cache_read_tokens as f64 / 1_000_000.0 * p.cache_read;
+        input + output + cw_5m + cw_1h + cr
     }
 }
 
@@ -66,7 +74,8 @@ pub struct UsageBucket {
     pub input_tokens: u64,
     pub output_tokens: u64,
     pub cache_read_tokens: u64,
-    pub cache_create_tokens: u64,
+    pub cache_write_5m_tokens: u64,
+    pub cache_write_1h_tokens: u64,
     pub total_tokens: u64,
     pub cost_usd: f64,
 }
@@ -77,7 +86,8 @@ impl UsageBucket {
         self.input_tokens += s.input_tokens;
         self.output_tokens += s.output_tokens;
         self.cache_read_tokens += s.cache_read_tokens;
-        self.cache_create_tokens += s.cache_create_tokens;
+        self.cache_write_5m_tokens += s.cache_write_5m_tokens;
+        self.cache_write_1h_tokens += s.cache_write_1h_tokens;
         self.total_tokens += s.total_tokens();
         self.cost_usd += s.estimated_cost_usd();
     }
@@ -214,7 +224,15 @@ fn parse_transcript(path: &Path, project_name: &str) -> Option<SessionUsage> {
                 usage.input_tokens += u.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
                 usage.output_tokens += u.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
                 usage.cache_read_tokens += u.get("cache_read_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-                usage.cache_create_tokens += u.get("cache_creation_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+
+                // Split cache writes by duration (5min vs 1hr)
+                if let Some(cc) = u.get("cache_creation") {
+                    usage.cache_write_5m_tokens += cc.get("ephemeral_5m_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                    usage.cache_write_1h_tokens += cc.get("ephemeral_1h_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                } else {
+                    // Fallback: treat all cache_creation as 5min if no breakdown
+                    usage.cache_write_5m_tokens += u.get("cache_creation_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                }
             }
         }
     }
