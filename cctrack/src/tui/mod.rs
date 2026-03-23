@@ -8,7 +8,7 @@ pub mod activity_panel;
 pub mod messages_panel;
 pub mod stats_panel;
 
-use std::io::{self, Write};
+use std::io;
 use std::time::Duration;
 
 use crossterm::{
@@ -63,7 +63,7 @@ pub async fn run_tui(
 
         // Draw
         terminal.draw(|frame| {
-            render(frame, &last_snapshot, &app, &stats_report);
+            render(frame, &last_snapshot, &mut app, &stats_report);
         })?;
 
         // Handle input (poll with 100ms timeout)
@@ -73,36 +73,38 @@ pub async fn run_tui(
                     continue;
                 }
 
-                let agent_count = last_snapshot
-                    .teams
-                    .get(app.selected_team_index)
-                    .or(last_snapshot.teams.first())
-                    .map(|t| t.agents.len())
-                    .unwrap_or(0);
-
                 let team_count = last_snapshot.teams.len();
 
                 match key.code {
                     KeyCode::Char('q') => app.should_quit = true,
-                    KeyCode::Char('j') | KeyCode::Down => {
+                    // ↑↓: scroll within current panel
+                    KeyCode::Down | KeyCode::Char('j') => {
                         let max = panel_item_count(&last_snapshot, &app);
                         app.scroll_down(max);
                     }
-                    KeyCode::Char('k') | KeyCode::Up => app.scroll_up(),
-                    KeyCode::Left => app.prev_agent(agent_count),
-                    KeyCode::Right => app.next_agent(agent_count),
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        let max = panel_item_count(&last_snapshot, &app);
+                        app.scroll_up(max);
+                    }
+                    // ←→: cycle panel focus
+                    KeyCode::Right | KeyCode::Char('l') => {
+                        let has_msg = app.selected_team_index > 0;
+                        app.next_panel(has_msg);
+                    }
+                    KeyCode::Left | KeyCode::Char('h') => {
+                        let has_msg = app.selected_team_index > 0;
+                        app.prev_panel(has_msg);
+                    }
+                    // Tab/Shift+Tab: switch team tab
                     KeyCode::Tab => app.next_team(team_count),
-                    KeyCode::BackTab => app.prev_team(team_count), // Shift+Tab
+                    KeyCode::BackTab => app.prev_team(team_count),
+                    // 1-4: jump to panel
                     KeyCode::Char('1') => app.select_panel(app_state::Panel::Agents),
                     KeyCode::Char('2') => app.select_panel(app_state::Panel::Tasks),
                     KeyCode::Char('3') => app.select_panel(app_state::Panel::Activity),
                     KeyCode::Char('4') => app.select_panel(app_state::Panel::Messages),
                     KeyCode::Char('w') => {
                         let _ = open::that("http://localhost:7891");
-                    }
-                    KeyCode::Char('t') => {
-                        let current = theme::is_light_mode();
-                        theme::set_light_mode(!current);
                     }
                     KeyCode::Char('?') => app.show_help = !app.show_help,
                     _ => {}
@@ -128,14 +130,14 @@ fn panel_item_count(snapshot: &StoreSnapshot, app: &AppState) -> usize {
     };
     match app.active_panel {
         app_state::Panel::Agents => team.agents.len(),
-        app_state::Panel::Tasks => team.tasks.len(),
+        app_state::Panel::Tasks => team.todos.len(),
         app_state::Panel::Activity => team.tool_events.len(),
         app_state::Panel::Messages => team.messages.len(),
     }
 }
 
 /// Main render entry point -- called once per frame by the TUI event loop.
-pub fn render(frame: &mut Frame, snapshot: &StoreSnapshot, app: &AppState, stats_report: &StatsReport) {
+pub fn render(frame: &mut Frame, snapshot: &StoreSnapshot, app: &mut AppState, stats_report: &StatsReport) {
     // Paint background
     let bg_widget = ratatui::widgets::Block::default().style(theme::bg());
     frame.render_widget(bg_widget, frame.area());
@@ -154,7 +156,7 @@ pub fn render(frame: &mut Frame, snapshot: &StoreSnapshot, app: &AppState, stats
         agents_panel::render(frame, areas.agents, team, app);
 
         if is_all {
-            stats_panel::render(frame, areas.tasks, stats_report);
+            stats_panel::render(frame, areas.tasks, stats_report, app);
         } else {
             tasks_panel::render(frame, areas.tasks, team, app);
         }
@@ -181,12 +183,12 @@ fn render_status_bar(frame: &mut Frame, area: ratatui::layout::Rect) {
     let spans = vec![
         Span::styled(" cctrack@2026", theme::title()),
         Span::styled(" \u{2502} ", theme::border()),
+        Span::styled("\u{2191}\u{2193}", key), // ↑↓
+        Span::styled(" scroll  ", theme::dim()),
+        Span::styled("\u{2190}\u{2192}", key), // ←→
+        Span::styled(" panel  ", theme::dim()),
         Span::styled("Tab", key),
-        Span::styled(" switch  ", theme::dim()),
-        Span::styled("\u{2190}\u{2192}", key),
-        Span::styled(" select  ", theme::dim()),
-        Span::styled("t", key),
-        Span::styled(" theme  ", theme::dim()),
+        Span::styled(" tab  ", theme::dim()),
         Span::styled("q", key),
         Span::styled(" quit", theme::dim()),
     ];

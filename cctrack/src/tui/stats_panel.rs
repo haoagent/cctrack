@@ -6,10 +6,13 @@ use ratatui::{
 };
 
 use crate::stats::{StatsReport, format_tokens};
+use super::app_state::{AppState, Panel};
 use super::theme;
 
-/// Render the stats panel (replaces Messages on ALL tab).
-pub fn render(frame: &mut Frame, area: Rect, report: &StatsReport) {
+/// Render the stats panel (replaces Todos on ALL tab).
+pub fn render(frame: &mut Frame, area: Rect, report: &StatsReport, app: &AppState) {
+    let is_focused = app.active_panel == Panel::Tasks;
+
     let header = Row::new(vec![
         Cell::from(Span::styled("", theme::header())),
         Cell::from(Span::styled("SESSIONS", theme::header())),
@@ -57,10 +60,15 @@ pub fn render(frame: &mut Frame, area: Rect, report: &StatsReport) {
         }
     }
 
+    let border_style = if is_focused {
+        theme::accent()
+    } else {
+        theme::border()
+    };
     let block = Block::default()
         .title(Span::styled(" Stats ", theme::title()))
         .borders(Borders::ALL)
-        .border_style(theme::border());
+        .border_style(border_style);
 
     let widths = [
         Constraint::Percentage(30),

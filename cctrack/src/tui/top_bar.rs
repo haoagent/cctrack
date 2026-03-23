@@ -1,7 +1,6 @@
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::Paragraph,
 };
@@ -56,8 +55,6 @@ pub fn render(frame: &mut Frame, area: Rect, app: &AppState, snapshot: &StoreSna
             } else {
                 t.agents.iter().any(|a| a.status == AgentStatus::Active)
             };
-            let is_all = i == 0; // First tab is always ALL
-
             let dot_char = if has_active { "\u{25cf}" } else { "\u{25cb}" }; // ● or ○
 
             // Tab label: strip "session:" prefix for display
@@ -67,25 +64,15 @@ pub fn render(frame: &mut Frame, area: Rect, app: &AppState, snapshot: &StoreSna
             let tab_label = truncate_display(&raw_label, 24);
 
             if is_selected {
-                let tab_bg = if is_all {
-                    Color::Rgb(30, 90, 100)
-                } else {
-                    Color::Rgb(65, 105, 225) // royal blue
-                };
-                let tab_style = Style::new()
-                    .bg(tab_bg)
-                    .fg(Color::White)
-                    .add_modifier(Modifier::BOLD);
-                let dot_style = Style::new()
-                    .bg(tab_bg)
-                    .fg(if has_active { Color::LightGreen } else { Color::DarkGray });
+                let tab_style = theme::tab_selected();
+                let dot_style = theme::tab_dot_selected(has_active);
 
                 spans.push(Span::styled(" ", tab_style));
                 spans.push(Span::styled(format!("{} ", dot_char), dot_style));
                 spans.push(Span::styled(format!("{} ", tab_label), tab_style));
             } else {
                 let dot_style = if has_active {
-                    Style::new().fg(Color::LightGreen)
+                    theme::status_style(&AgentStatus::Active)
                 } else {
                     theme::dim()
                 };

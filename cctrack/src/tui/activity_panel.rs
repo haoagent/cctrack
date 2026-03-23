@@ -1,6 +1,7 @@
 use ratatui::{
     Frame,
     layout::Rect,
+    style::Modifier,
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem},
 };
@@ -12,15 +13,12 @@ use super::theme;
 /// Extract HH:MM:SS from an ISO-8601 or similar timestamp string.
 /// Falls back to the raw string if parsing fails.
 fn extract_time(ts: &str) -> &str {
-    // Try to find "HH:MM:SS" (8 chars with colons at positions 2 and 5)
-    // Common formats: "2024-01-15T14:30:00Z", "14:30:00", epoch-based strings
     if let Some(t_pos) = ts.find('T') {
         let after_t = &ts[t_pos + 1..];
         if after_t.len() >= 8 {
             return &after_t[..8];
         }
     }
-    // If the string itself looks like HH:MM:SS
     if ts.len() >= 8 && ts.as_bytes().get(2) == Some(&b':') && ts.as_bytes().get(5) == Some(&b':')
     {
         return &ts[..8];
@@ -28,9 +26,9 @@ fn extract_time(ts: &str) -> &str {
     ts
 }
 
-/// Render the live activity (tool events) panel.
-pub fn render(frame: &mut Frame, area: Rect, team: &TeamSnapshot, app: &AppState) {
-    let _is_focused = app.active_panel == Panel::Activity;
+/// Render the live activity (tool events) panel with auto-scroll.
+pub fn render(frame: &mut Frame, area: Rect, team: &TeamSnapshot, app: &mut AppState) {
+    let is_focused = app.active_panel == Panel::Activity;
 
     // Determine selected agent name
     let selected_agent_name = team
@@ -72,7 +70,6 @@ pub fn render(frame: &mut Frame, area: Rect, team: &TeamSnapshot, app: &AppState
     } else {
         events
             .iter()
-            // Chronological order (newest at bottom, like tail -f)
             .map(|evt| {
                 let time = extract_time(&evt.timestamp);
                 let tool_sty = theme::tool_style(&evt.tool_name);
@@ -95,7 +92,6 @@ pub fn render(frame: &mut Frame, area: Rect, team: &TeamSnapshot, app: &AppState
 
                 // Show agent name: always on ALL tab, or when multiple agents
                 let agent_label = if is_all || team.agents.len() > 1 {
-                    // Use cwd-based short name or truncated agent_name
                     let short = evt.cwd.as_deref()
                         .and_then(|p| std::path::Path::new(p).file_name())
                         .and_then(|f| f.to_str())
@@ -120,12 +116,38 @@ pub fn render(frame: &mut Frame, area: Rect, team: &TeamSnapshot, app: &AppState
             .collect()
     };
 
+    let border_style = if is_focused {
+        theme::accent()
+    } else {
+        theme::border()
+    };
     let block = Block::default()
         .title(Span::styled(panel_title, theme::title()))
         .borders(Borders::ALL)
-        .border_style(theme::border());
+        .border_style(border_style);
 
-    let list = List::new(items).block(block);
+    let highlight = ratatui::style::Style::new()
+        .bg(ratatui::style::Color::Blue)
+        .fg(ratatui::style::Color::White)
+        .add_modifier(ratatui::style::Modifier::BOLD);
 
-    frame.render_widget(list, area);
+    let list = List::new(items.clone())
+        .block(block)
+        .highlight_style(highlight);
+
+    // Auto-scroll to bottom when following tail (selected = None)
+    if app.activity_state.selected().is_none() && !items.is_empty() {
+        app.activity_state.select(Some(items.len() - 1));
+        frame.render_stateful_widget(list, area, &mut app.activity_state);
+        // Reset to None so next frame continues following
+        app.activity_state.select(None);
+    } else {
+        // Clamp manual selection to valid range
+        if let Some(sel) = app.activity_state.selected() {
+            if sel >= items.len() && !items.is_empty() {
+                app.activity_state.select(Some(items.len() - 1));
+            }
+        }
+        frame.render_stateful_widget(list, area, &mut app.activity_state);
+    }
 }

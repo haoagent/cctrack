@@ -26,9 +26,9 @@ fn extract_time(ts: &str) -> &str {
     ts
 }
 
-/// Render the messages panel.
-pub fn render(frame: &mut Frame, area: Rect, team: &TeamSnapshot, app: &AppState) {
-    let _is_focused = app.active_panel == Panel::Messages;
+/// Render the messages panel with auto-scroll.
+pub fn render(frame: &mut Frame, area: Rect, team: &TeamSnapshot, app: &mut AppState) {
+    let is_focused = app.active_panel == Panel::Messages;
 
     // Filter out IdleNotification messages
     let filtered: Vec<_> = team
@@ -43,13 +43,11 @@ pub fn render(frame: &mut Frame, area: Rect, team: &TeamSnapshot, app: &AppState
             theme::dim(),
         )]))]
     } else {
-        // Show messages in chronological order (most recent at bottom)
         filtered
             .iter()
             .map(|msg| {
                 let time = extract_time(&msg.timestamp);
                 let summary = if msg.summary.is_empty() {
-                    // Fall back to truncated text
                     let t = &msg.text;
                     if t.len() > 60 {
                         format!("{}...", &t[..57])
@@ -76,12 +74,36 @@ pub fn render(frame: &mut Frame, area: Rect, team: &TeamSnapshot, app: &AppState
             .collect()
     };
 
+    let border_style = if is_focused {
+        theme::accent()
+    } else {
+        theme::border()
+    };
     let block = Block::default()
         .title(Span::styled(" Messages ", theme::title()))
         .borders(Borders::ALL)
-        .border_style(theme::border());
+        .border_style(border_style);
 
-    let list = List::new(items).block(block);
+    let highlight = ratatui::style::Style::new()
+        .bg(ratatui::style::Color::Blue)
+        .fg(ratatui::style::Color::White)
+        .add_modifier(ratatui::style::Modifier::BOLD);
 
-    frame.render_widget(list, area);
+    let list = List::new(items.clone())
+        .block(block)
+        .highlight_style(highlight);
+
+    // Auto-scroll to bottom when following tail (selected = None)
+    if app.messages_state.selected().is_none() && !items.is_empty() {
+        app.messages_state.select(Some(items.len() - 1));
+        frame.render_stateful_widget(list, area, &mut app.messages_state);
+        app.messages_state.select(None);
+    } else {
+        if let Some(sel) = app.messages_state.selected() {
+            if sel >= items.len() && !items.is_empty() {
+                app.messages_state.select(Some(items.len() - 1));
+            }
+        }
+        frame.render_stateful_widget(list, area, &mut app.messages_state);
+    }
 }

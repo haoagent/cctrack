@@ -1,6 +1,7 @@
 use ratatui::{
     Frame,
     layout::{Constraint, Rect},
+    style::Modifier,
     text::Span,
     widgets::{Block, Borders, Cell, Row, Table},
 };
@@ -9,65 +10,56 @@ use crate::store::event::TeamSnapshot;
 use super::app_state::{AppState, Panel};
 use super::theme;
 
-/// Truncate a model identifier to a short display name.
 fn short_model(model: &str) -> &str {
     let lower = model.to_lowercase();
-    if lower.contains("opus") {
-        "opus"
-    } else if lower.contains("sonnet") {
-        "sonnet"
-    } else if lower.contains("haiku") {
-        "haiku"
-    } else if model.len() > 12 {
-        model.rsplit('-').next().unwrap_or(model)
-    } else {
-        model
-    }
+    if lower.contains("opus") { "opus" }
+    else if lower.contains("sonnet") { "sonnet" }
+    else if lower.contains("haiku") { "haiku" }
+    else if model.len() > 12 { model.rsplit('-').next().unwrap_or(model) }
+    else { model }
 }
 
-/// Format token count as compact string: 1.2K, 45K, 1.2M
 fn format_tokens(n: u64) -> String {
-    if n == 0 {
-        "-".to_string()
-    } else if n < 1_000 {
-        format!("{}", n)
-    } else if n < 1_000_000 {
-        format!("{:.1}K", n as f64 / 1_000.0)
-    } else {
-        format!("{:.1}M", n as f64 / 1_000_000.0)
-    }
+    if n == 0 { "-".to_string() }
+    else if n < 1_000 { format!("{}", n) }
+    else if n < 1_000_000 { format!("{:.1}K", n as f64 / 1_000.0) }
+    else { format!("{:.1}M", n as f64 / 1_000_000.0) }
 }
 
-/// Render the agents table.
-pub fn render(frame: &mut Frame, area: Rect, team: &TeamSnapshot, app: &AppState) {
-    let _is_focused = app.active_panel == Panel::Agents;
+pub fn render(frame: &mut Frame, area: Rect, team: &TeamSnapshot, app: &mut AppState) {
+    let is_focused = app.active_panel == Panel::Agents;
     let is_all = team.name == "all";
     let is_session_tab = team.name.starts_with("session:");
 
     let agents: Vec<_> = team.agents.iter().collect();
+    app.clamp_agent_index(agents.len());
 
-    let active = team.agents.iter()
-        .filter(|a| a.status == crate::store::models::AgentStatus::Active)
-        .count();
+    let active = agents.iter().filter(|a| a.status == crate::store::models::AgentStatus::Active).count();
     let total = agents.len();
     let panel_title = if is_all {
         format!(" Sessions ({}/{}) ", active, total)
     } else {
         format!(" Agents ({}/{}) ", active, total)
     };
+
+    let border_style = if is_focused { theme::accent() } else { theme::border() };
     let block = Block::default()
         .title(Span::styled(&panel_title, theme::title()))
         .borders(Borders::ALL)
-        .border_style(theme::border());
+        .border_style(border_style);
+
+    // Explicit bg+fg instead of REVERSED — avoids colored background patches
+    let highlight = ratatui::style::Style::new()
+        .bg(ratatui::style::Color::Blue)
+        .fg(ratatui::style::Color::White)
+        .add_modifier(Modifier::BOLD);
 
     if is_all {
-        // ALL tab: ● NAME, TOKENS, COST (status dot inline with name)
         let header = Row::new(vec![
             Cell::from(Span::styled("NAME", theme::header())),
             Cell::from(Span::styled("TOKENS", theme::header())),
             Cell::from(Span::styled("COST", theme::header())),
-        ])
-        .height(1);
+        ]).height(1);
 
         let rows: Vec<Row> = agents.iter().map(|agent| {
             let status_sym = theme::status_symbol(&agent.status);
@@ -75,15 +67,11 @@ pub fn render(frame: &mut Frame, area: Rect, team: &TeamSnapshot, app: &AppState
             let tokens = format_tokens(agent.tokens.total());
             let cost = if agent.tokens.total() > 0 {
                 format!("${:.2}", agent.tokens.estimated_cost_for_model(agent.model.as_deref()))
-            } else {
-                "-".to_string()
-            };
+            } else { "-".to_string() };
 
-            // "● Project: title (N)" — dot=status color, project=cyan, title=normal, (N)=sub-agent count
             let sub_count_suffix = agent.sub_agent_count
-                .filter(|&n| n > 0)
-                .map(|n| format!(" ({})", n))
-                .unwrap_or_default();
+                .filter(|&n| n > 0).map(|n| format!(" ({})", n)).unwrap_or_default();
+
             let name_line = if let Some((project, title)) = agent.name.split_once(": ") {
                 ratatui::text::Line::from(vec![
                     Span::styled(format!("{} ", status_sym), status_sty),
@@ -106,34 +94,27 @@ pub fn render(frame: &mut Frame, area: Rect, team: &TeamSnapshot, app: &AppState
             ])
         }).collect();
 
-        let widths = [
-            Constraint::Percentage(60),
-            Constraint::Percentage(18),
-            Constraint::Percentage(18),
-        ];
+        let widths = [Constraint::Percentage(60), Constraint::Percentage(18), Constraint::Percentage(18)];
+        let table = Table::new(rows, widths).header(header).block(block)
+            .row_highlight_style(highlight);
+        frame.render_stateful_widget(table, area, &mut app.agents_state);
 
-        let table = Table::new(rows, widths).header(header).block(block);
-        frame.render_widget(table, area);
     } else if is_session_tab {
-        // Session tab: ● NAME, MODEL, TOKENS, COST (no STATUS column, dot inline)
         let header = Row::new(vec![
             Cell::from(Span::styled("NAME", theme::header())),
             Cell::from(Span::styled("MODEL", theme::header())),
             Cell::from(Span::styled("TOKENS", theme::header())),
             Cell::from(Span::styled("COST", theme::header())),
-        ])
-        .height(1);
+        ]).height(1);
 
         let rows: Vec<Row> = agents.iter().map(|agent| {
-            let model_str = agent.model.as_deref().map(short_model).unwrap_or("-");
             let status_sym = theme::status_symbol(&agent.status);
             let status_sty = theme::status_style(&agent.status);
+            let model_str = agent.model.as_deref().map(short_model).unwrap_or("-");
             let tokens = format_tokens(agent.tokens.total());
             let cost = if agent.tokens.total() > 0 {
                 format!("${:.2}", agent.tokens.estimated_cost_for_model(agent.model.as_deref()))
-            } else {
-                "-".to_string()
-            };
+            } else { "-".to_string() };
 
             let name_line = ratatui::text::Line::from(vec![
                 Span::styled(format!("{} ", status_sym), status_sty),
@@ -148,55 +129,44 @@ pub fn render(frame: &mut Frame, area: Rect, team: &TeamSnapshot, app: &AppState
             ])
         }).collect();
 
-        let widths = [
-            Constraint::Percentage(40),
-            Constraint::Percentage(15),
-            Constraint::Percentage(20),
-            Constraint::Percentage(20),
-        ];
+        let widths = [Constraint::Percentage(40), Constraint::Percentage(15), Constraint::Percentage(20), Constraint::Percentage(20)];
+        let table = Table::new(rows, widths).header(header).block(block)
+            .row_highlight_style(highlight);
+        frame.render_stateful_widget(table, area, &mut app.agents_state);
 
-        let table = Table::new(rows, widths).header(header).block(block);
-        frame.render_widget(table, area);
     } else {
-        // Team tab: NAME, MODEL, STATUS, TOKENS, COST
         let header = Row::new(vec![
             Cell::from(Span::styled("NAME", theme::header())),
             Cell::from(Span::styled("MODEL", theme::header())),
             Cell::from(Span::styled("STATUS", theme::header())),
             Cell::from(Span::styled("TOKENS", theme::header())),
             Cell::from(Span::styled("COST", theme::header())),
-        ])
-        .height(1);
+        ]).height(1);
 
         let rows: Vec<Row> = agents.iter().map(|agent| {
-            let model_str = agent.model.as_deref().map(short_model).unwrap_or("-");
             let status_sym = theme::status_symbol(&agent.status);
             let status_sty = theme::status_style(&agent.status);
+            let model_str = agent.model.as_deref().map(short_model).unwrap_or("-");
             let tokens = format_tokens(agent.tokens.total());
             let cost = if agent.tokens.total() > 0 {
                 format!("${:.2}", agent.tokens.estimated_cost_for_model(agent.model.as_deref()))
-            } else {
-                "-".to_string()
-            };
+            } else { "-".to_string() };
 
             Row::new(vec![
                 Cell::from(Span::styled(agent.name.clone(), theme::project_name())),
                 Cell::from(Span::styled(model_str, theme::dim())),
-                Cell::from(Span::styled(format!("{} {}", status_sym, agent.status.label()), status_sty)),
+                Cell::from(ratatui::text::Line::from(vec![
+                    Span::styled(format!("{} ", status_sym), status_sty),
+                    Span::styled(agent.status.label(), theme::text()),
+                ])),
                 Cell::from(Span::styled(tokens, theme::dim())),
                 Cell::from(Span::styled(cost, theme::cost_style())),
             ])
         }).collect();
 
-        let widths = [
-            Constraint::Percentage(30),
-            Constraint::Percentage(15),
-            Constraint::Percentage(20),
-            Constraint::Percentage(15),
-            Constraint::Percentage(15),
-        ];
-
-        let table = Table::new(rows, widths).header(header).block(block);
-        frame.render_widget(table, area);
+        let widths = [Constraint::Percentage(30), Constraint::Percentage(15), Constraint::Percentage(20), Constraint::Percentage(15), Constraint::Percentage(15)];
+        let table = Table::new(rows, widths).header(header).block(block)
+            .row_highlight_style(highlight);
+        frame.render_stateful_widget(table, area, &mut app.agents_state);
     }
 }

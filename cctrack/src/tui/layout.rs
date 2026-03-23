@@ -59,9 +59,9 @@ pub fn build_layout_team(area: Rect) -> LayoutAreas {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3),        // top_bar
-            Constraint::Percentage(40),   // upper (agents + todos)
+            Constraint::Percentage(35),   // upper (agents + todos)
             Constraint::Percentage(30),   // activity
-            Constraint::Min(3),           // messages
+            Constraint::Percentage(20),   // messages
             Constraint::Length(2),        // help_bar
         ])
         .split(area);
