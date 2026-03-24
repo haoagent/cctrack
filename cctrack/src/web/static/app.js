@@ -223,14 +223,14 @@
     if(S.ch.tok) S.ch.tok.destroy();
     var ctx=document.getElementById('token-chart');
     if(ctx&&d.length) S.ch.tok=new Chart(ctx,{type:'line',data:{labels:d.map(function(x){return x.date.slice(5);}),datasets:[
-      {label:'Input',data:d.map(function(x){return x.input_tokens;}),borderColor:dk?'#3b82f6':'#2563eb',backgroundColor:dk?'rgba(59,130,246,0.06)':'rgba(37,99,235,0.06)',fill:true,tension:0.4,pointRadius:2,borderWidth:1.5},
-      {label:'Output',data:d.map(function(x){return x.output_tokens;}),borderColor:dk?'#a78bfa':'#7c3aed',backgroundColor:dk?'rgba(167,139,250,0.06)':'rgba(124,58,237,0.06)',fill:true,tension:0.4,pointRadius:2,borderWidth:1.5},
-      {label:'Cache',data:d.map(function(x){return x.cache_tokens;}),borderColor:dk?'#06b6d4':'#0891b2',backgroundColor:dk?'rgba(6,182,212,0.04)':'rgba(8,145,178,0.04)',fill:true,tension:0.4,pointRadius:2,borderWidth:1.5}
+      {label:'Input',data:d.map(function(x){return x.input_tokens;}),borderColor:dk?'#a1a1aa':'#71717a',backgroundColor:dk?'rgba(161,161,170,0.05)':'rgba(113,113,122,0.05)',fill:true,tension:0.4,pointRadius:2,borderWidth:1.5},
+      {label:'Output',data:d.map(function(x){return x.output_tokens;}),borderColor:dk?'#71717a':'#52525b',backgroundColor:dk?'rgba(113,113,122,0.04)':'rgba(82,82,91,0.04)',fill:true,tension:0.4,pointRadius:2,borderWidth:1.5},
+      {label:'Cache',data:d.map(function(x){return x.cache_tokens;}),borderColor:dk?'#52525b':'#a1a1aa',backgroundColor:dk?'rgba(82,82,91,0.03)':'rgba(161,161,170,0.03)',fill:true,tension:0.4,pointRadius:2,borderWidth:1.5}
     ]},options:co(gc,function(v){return fmtTok(v);})});
     // Cost
     if(S.ch.cost) S.ch.cost.destroy();
     var ctx2=document.getElementById('cost-chart');
-    if(ctx2&&d.length) S.ch.cost=new Chart(ctx2,{type:'bar',data:{labels:d.map(function(x){return x.date.slice(5);}),datasets:[{data:d.map(function(x){return Math.round(x.cost_usd*100)/100;}),backgroundColor:dk?'rgba(99,102,241,0.5)':'rgba(99,102,241,0.6)',borderColor:dk?'#6366f1':'#4f46e5',borderWidth:1,borderRadius:2,barPercentage:0.7}]},options:co(gc,function(v){return '$'+v;},true)});
+    if(ctx2&&d.length) S.ch.cost=new Chart(ctx2,{type:'bar',data:{labels:d.map(function(x){return x.date.slice(5);}),datasets:[{data:d.map(function(x){return Math.round(x.cost_usd*100)/100;}),backgroundColor:dk?'rgba(161,161,170,0.3)':'rgba(113,113,122,0.4)',borderColor:dk?'#71717a':'#52525b',borderWidth:1,borderRadius:2,barPercentage:0.7}]},options:co(gc,function(v){return '$'+v;},true)});
   }
 
   function co(gc,fmt,noLeg){
