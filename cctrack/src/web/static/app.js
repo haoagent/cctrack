@@ -47,14 +47,26 @@
   function renderHero(t) {
     if (!t && S.snap) t = S.snap.teams[S.ti];
     if (!t) return;
-    var ag = t.agents||[], tok=0, cost=0, cache=0, inp=0;
-    ag.forEach(function(a){ if(a.tokens){ tok+=ttok(a.tokens); cost+=ecost(a.tokens); cache+=(a.tokens.cache_read_tokens||0); inp+=(a.tokens.input_tokens||0)+(a.tokens.cache_read_tokens||0); }});
-    var isAll = t.name==='all';
-    $('hero-cost', '$'+cost.toFixed(2));
-    $('hero-tokens', fmtTok(tok));
-    $('hero-sessions', ag.length);
-    $('hero-sessions-label', isAll?'sessions':'agents');
-    $('hero-cache', (inp>0?Math.round(cache/inp*100):0)+'%');
+    var ag = t.agents||[], isAll = t.name==='all';
+
+    // Use stats for today/month (includes active sessions now)
+    if (S.stats) {
+      $('hero-cost', '$'+S.stats.today.cost_usd.toFixed(2));
+      $('hero-tokens', fmtTok(S.stats.today.total_tokens));
+      $('hero-month-cost', '$'+S.stats.this_month.cost_usd.toFixed(2));
+      $('hero-month-label', S.stats.this_month.label || 'this month');
+    } else {
+      // Fallback to live session data before stats load
+      var tok=0, cost=0;
+      ag.forEach(function(a){ if(a.tokens){ tok+=ttok(a.tokens); cost+=ecost(a.tokens); }});
+      $('hero-cost', '$'+cost.toFixed(2));
+      $('hero-tokens', fmtTok(tok));
+      $('hero-month-cost', '—');
+    }
+
+    var activeCount = ag.filter(function(a){return a.status==='Active';}).length;
+    $('hero-sessions', activeCount + ' / ' + ag.length);
+    $('hero-sessions-label', isAll ? 'active / sessions' : 'active / agents');
   }
 
   function renderTabs(teams) {
@@ -76,7 +88,8 @@
     tb.innerHTML = ag.map(function(a){
       var s=(a.status||'unknown').toLowerCase(), tok=a.tokens?ttok(a.tokens):0, cost=a.tokens?ecost(a.tokens):0;
       var m=a.model?smodel(a.model):'', sub=a.sub_agent_count&&a.sub_agent_count>0?'<span class="badge">'+a.sub_agent_count+'</span>':'';
-      return '<tr><td>'+esc(a.name)+sub+'</td><td><span class="dot-s '+s+'"></span><span class="st '+s+'">'+cap1(a.status)+'</span></td><td class="dim" style="font-size:12px">'+esc(m)+'</td><td class="r tok">'+(tok>0?fmtTok(tok):'\u2014')+'</td><td class="r cost">'+(cost>0?'$'+cost.toFixed(2):'\u2014')+'</td></tr>';
+      var displayName = a.name.length > 40 ? a.name.slice(0, 37) + '...' : a.name;
+      return '<tr><td title="'+esc(a.name)+'">'+esc(displayName)+sub+'</td><td><span class="dot-s '+s+'"></span><span class="st '+s+'">'+cap1(a.status)+'</span></td><td class="dim" style="font-size:12px">'+esc(m)+'</td><td class="r tok">'+(tok>0?fmtTok(tok):'\u2014')+'</td><td class="r cost">'+(cost>0?'$'+cost.toFixed(2):'\u2014')+'</td></tr>';
     }).join('');
   }
 
@@ -144,7 +157,8 @@
   function renderCap() {
     if(!S.stats||!S.stats.cap) return;
     var c=S.stats.cap, cur=c.current;
-    $('cap-plan',c.plan.toUpperCase());
+    var planLabel = {pro:'Pro',max5:'Max 5x',max20:'Max 20x'}[c.plan] || c.plan;
+    $('cap-plan', planLabel);
     $('cap-total',fmtTok(c.cap_per_window));
     $('cap-waste',fmtTok(c.total_waste));
     if(cur){

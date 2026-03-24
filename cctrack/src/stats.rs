@@ -239,17 +239,7 @@ pub fn compute_stats(claude_home: &Path) -> StatsReport {
                 continue;
             }
 
-            // Skip in-progress transcripts (modified within last 60 seconds)
-            if let Ok(meta) = file_path.metadata() {
-                if let Ok(modified) = meta.modified() {
-                    if let Ok(age) = SystemTime::now().duration_since(modified) {
-                        if age.as_secs() < 60 {
-                            continue;
-                        }
-                    }
-                }
-            }
-
+            // Include all transcripts (including in-progress ones)
             let usages = parse_transcript(&file_path, &project_name);
             sessions.extend(usages);
         }
