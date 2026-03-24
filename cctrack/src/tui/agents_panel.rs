@@ -48,9 +48,9 @@ pub fn render(frame: &mut Frame, area: Rect, team: &TeamSnapshot, app: &mut AppS
         .borders(Borders::ALL)
         .border_style(border_style);
 
-    // Explicit bg+fg instead of REVERSED — avoids colored background patches
+    // Black bg + white fg — system default highlight, no colored patches
     let highlight = ratatui::style::Style::new()
-        .bg(ratatui::style::Color::Blue)
+        .bg(ratatui::style::Color::Black)
         .fg(ratatui::style::Color::White)
         .add_modifier(Modifier::BOLD);
 

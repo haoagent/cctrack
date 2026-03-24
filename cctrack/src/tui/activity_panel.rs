@@ -127,7 +127,7 @@ pub fn render(frame: &mut Frame, area: Rect, team: &TeamSnapshot, app: &mut AppS
         .border_style(border_style);
 
     let highlight = ratatui::style::Style::new()
-        .bg(ratatui::style::Color::Blue)
+        .bg(ratatui::style::Color::Black)
         .fg(ratatui::style::Color::White)
         .add_modifier(ratatui::style::Modifier::BOLD);
 

@@ -1,0 +1,8 @@
+target/
+Agentpay/
+MEMORY/
+CLAUDE.md
+CHANGELOG-*.md
+docs/
+*.log
+.DS_Store

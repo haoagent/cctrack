@@ -59,9 +59,9 @@
       $('hero-cost', '$' + S.stats.today.cost_usd.toFixed(2));
       $('hero-label', 'today');
     } else {
-      // Session tab: show this session's total cost
-      var cost = 0;
-      (t.agents || []).forEach(function(a) { if (a.tokens) cost += ecost(a.tokens); });
+      // Session tab: show parent agent's cost (same as ALL tab row)
+      var parent = (t.agents || []).find(function(a) { return a.agent_type !== 'subagent'; });
+      var cost = parent && parent.tokens ? ecost(parent.tokens) : 0;
       $('hero-cost', '$' + cost.toFixed(2));
       $('hero-label', 'session cost');
     }
