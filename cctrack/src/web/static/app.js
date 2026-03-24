@@ -1,333 +1,431 @@
-// cctrack Web Dashboard — SSE Client
-(function() {
+// cctrack Premium Web Dashboard
+(function () {
   'use strict';
 
-  var selectedTeamIndex = 0;
-  var latestSnapshot = null;
-  var statsData = null;
+  // ─── State ───
+  var state = {
+    snapshot: null,
+    stats: null,
+    teamIndex: 0,
+    bottomTab: 'activity',
+    theme: localStorage.getItem('cctrack-theme') || 'dark',
+    charts: { token: null, cost: null, project: null }
+  };
 
-  // SSE with auto-reconnection
+  // Apply saved theme
+  document.documentElement.setAttribute('data-theme', state.theme);
+  updateThemeIcon();
+
+  // ─── SSE Connection ───
   function connectSSE() {
     var es = new EventSource('/api/sse');
-    es.onmessage = function(event) {
+    es.onmessage = function (e) {
       try {
-        latestSnapshot = JSON.parse(event.data);
+        state.snapshot = JSON.parse(e.data);
         renderAll();
-      } catch (e) {
-        console.error('Failed to parse SSE data:', e);
-      }
+      } catch (err) { console.error('SSE parse error:', err); }
     };
-    es.onerror = function() {
-      es.close();
-      setTimeout(connectSSE, 3000);
-    };
+    es.onerror = function () { es.close(); setTimeout(connectSSE, 3000); };
   }
   connectSSE();
 
-  // Fetch stats periodically (every 60s)
+  // ─── Stats Fetch ───
   function fetchStats() {
     fetch('/api/stats')
-      .then(function(r) { return r.json(); })
-      .then(function(data) { statsData = data; renderAll(); })
-      .catch(function() {});
+      .then(function (r) { return r.json(); })
+      .then(function (d) { state.stats = d; renderCharts(); renderHeader(); })
+      .catch(function () {});
   }
   fetchStats();
   setInterval(fetchStats, 60000);
 
-  function renderAll() {
-    if (!latestSnapshot || !latestSnapshot.teams || latestSnapshot.teams.length === 0) {
-      return;
-    }
-    renderTabBar(latestSnapshot.teams);
-    var team = latestSnapshot.teams[selectedTeamIndex] || latestSnapshot.teams[0];
-    renderTeam(team);
+  // ─── Theme Toggle ───
+  document.getElementById('theme-toggle').onclick = function () {
+    state.theme = state.theme === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', state.theme);
+    localStorage.setItem('cctrack-theme', state.theme);
+    updateThemeIcon();
+    renderCharts();
+  };
+
+  function updateThemeIcon() {
+    var el = document.getElementById('theme-icon');
+    if (el) el.innerHTML = state.theme === 'dark' ? '&#9790;' : '&#9728;';
   }
 
-  function renderTabBar(teams) {
-    var bar = document.getElementById('tab-bar');
-    bar.innerHTML = teams.map(function(t, i) {
-      var isSelected = i === selectedTeamIndex;
-      var hasActive = t.agents && t.agents.some(function(a) { return a.status === 'Active'; });
-      var isAll = i === 0;
-      var cls = 'tab' + (isSelected ? ' tab-selected' : '') + (isAll ? ' tab-all' : '');
-      var dot = hasActive ? '\u25cf' : '\u25cb';
-      var dotCls = hasActive ? 'dot-active' : 'dot-idle';
-      return '<button class="' + cls + '" data-index="' + i + '">' +
-        '<span class="' + dotCls + '">' + dot + '</span> ' +
-        esc(t.name.toUpperCase()) +
-        '</button>';
+  // ─── Panel Tab Switching ───
+  document.querySelectorAll('.panel-tab').forEach(function (btn) {
+    btn.onclick = function () {
+      document.querySelectorAll('.panel-tab').forEach(function (b) { b.classList.remove('active'); });
+      btn.classList.add('active');
+      state.bottomTab = btn.dataset.tab;
+      renderBottomPanel();
+    };
+  });
+
+  // ─── Render All ───
+  function renderAll() {
+    if (!state.snapshot || !state.snapshot.teams || state.snapshot.teams.length === 0) return;
+    var teams = state.snapshot.teams;
+    if (state.teamIndex >= teams.length) state.teamIndex = 0;
+
+    renderHeader();
+    renderTeamTabs(teams);
+    renderSidebar(teams[state.teamIndex]);
+    renderBottomPanel();
+  }
+
+  // ─── Header Stats ───
+  function renderHeader() {
+    var snap = state.snapshot;
+    if (!snap || !snap.teams || !snap.teams.length) return;
+    var team = snap.teams[state.teamIndex] || snap.teams[0];
+    var agents = team.agents || [];
+
+    var activeCount = agents.filter(function (a) { return a.status === 'Active'; }).length;
+    setText('stat-active', activeCount);
+    setText('stat-sessions', agents.length);
+
+    var totalTokens = 0;
+    var totalCost = 0;
+    agents.forEach(function (a) {
+      if (a.tokens) {
+        totalTokens += tokenTotal(a.tokens);
+        totalCost += estimateCost(a.tokens);
+      }
+    });
+    setText('stat-tokens', formatTokens(totalTokens));
+    setText('stat-cost', '$' + totalCost.toFixed(2));
+  }
+
+  // ─── Team Tabs ───
+  function renderTeamTabs(teams) {
+    var el = document.getElementById('team-tabs');
+    el.innerHTML = teams.map(function (t, i) {
+      var active = i === state.teamIndex;
+      var hasActive = (t.agents || []).some(function (a) { return a.status === 'Active'; });
+      var dotCls = hasActive ? 'active' : 'idle';
+      var name = t.name.replace(/^session:/, '').toUpperCase();
+      return '<button class="team-tab' + (active ? ' active' : '') + '" data-i="' + i + '">' +
+        '<span class="dot ' + dotCls + '"></span>' + esc(name) + '</button>';
     }).join('');
 
-    bar.querySelectorAll('.tab').forEach(function(btn) {
-      btn.onclick = function() {
-        selectedTeamIndex = parseInt(btn.dataset.index, 10);
+    el.querySelectorAll('.team-tab').forEach(function (btn) {
+      btn.onclick = function () {
+        state.teamIndex = parseInt(btn.dataset.i, 10);
         renderAll();
+        renderCharts();
       };
     });
   }
 
-  function renderTeam(team) {
+  // ─── Sidebar ───
+  function renderSidebar(team) {
     var isAll = team.name === 'all';
+    setText('sidebar-title', isAll ? 'Sessions' : 'Agents');
 
-    // Filter agents first, then use for everything
     var agents = team.agents || [];
-    if (isAll) {
-      agents = agents.filter(function(a) { return a.status !== 'Shutdown'; });
-    }
-
-    // Dynamic labels
-    var label = isAll ? 'Sessions' : 'Agents';
-    document.getElementById('agent-label').textContent = label;
-    document.getElementById('agents-panel-title').textContent = label;
-    document.getElementById('agents-empty-title').textContent = isAll ? 'No sessions' : 'No agents';
-
-    // Header stats
-    document.getElementById('agent-count').textContent = agents.length;
-    var todoDone = team.todos ? team.todos.filter(function(t) { return t.status === 'completed'; }).length : 0;
-    var todoTotal = team.todos ? team.todos.length : 0;
-    document.getElementById('todo-progress').textContent = todoDone + '/' + todoTotal;
-    document.getElementById('event-count').textContent = team.tool_events ? team.tool_events.length : 0;
-    var costUsd = team.metrics ? team.metrics.estimated_cost_usd : 0;
-    document.getElementById('total-cost').textContent = '$' + costUsd.toFixed(2);
-
-    renderAgents(agents);
-
-    // ALL tab: show Stats; Team tab: show Todos
-    var statsPanel = document.getElementById('stats-panel');
-    var todosPanel = document.getElementById('todos-panel');
-    if (isAll) {
-      statsPanel.style.display = '';
-      todosPanel.style.display = 'none';
-      renderStats(statsData);
-    } else {
-      statsPanel.style.display = 'none';
-      todosPanel.style.display = '';
-      renderTodos(team.todos || []);
-    }
-
-    renderActivity(team.tool_events || [], isAll);
-
-    // ALL tab: hide messages panel
-    var messagesPanel = document.getElementById('messages-panel');
-    if (isAll) {
-      messagesPanel.style.display = 'none';
-    } else {
-      messagesPanel.style.display = '';
-      renderMessages(team.messages || []);
-    }
-  }
-
-  function renderAgents(agents) {
-    var tbody = document.getElementById('agents-body');
-    var empty = document.getElementById('agents-empty');
+    var el = document.getElementById('agent-list');
 
     if (agents.length === 0) {
-      tbody.innerHTML = '';
-      empty.style.display = 'block';
-      return;
-    }
-    empty.style.display = 'none';
-
-    tbody.innerHTML = agents.map(function(agent) {
-      var name = agent.name || '\u2014';
-      var status = agent.status || 'Unknown';
-      var statusClass = status.toLowerCase();
-      var tokens = agent.tokens ? (agent.tokens.input_tokens + agent.tokens.output_tokens + agent.tokens.cache_read_tokens + (agent.tokens.cache_create_5m_tokens || 0) + (agent.tokens.cache_create_1h_tokens || 0)) : 0;
-      var tokensStr = tokens > 0 ? formatTokens(tokens) : '\u2014';
-      var cost = agent.tokens ? estimateCost(agent.tokens) : 0;
-      var costStr = cost > 0 ? '$' + cost.toFixed(2) : '\u2014';
-
-      return '<tr>' +
-        '<td>' + esc(name) + '</td>' +
-        '<td><span class="status-dot ' + statusClass + '"></span>' +
-        '<span class="status-' + statusClass + '">' + esc(status) + '</span></td>' +
-        '<td style="color:var(--text-muted);text-align:right">' + tokensStr + '</td>' +
-        '<td style="color:var(--green-bright);text-align:right">' + costStr + '</td>' +
-        '</tr>';
-    }).join('');
-  }
-
-  function renderStats(stats) {
-    var body = document.getElementById('stats-body');
-    if (!stats) {
-      body.innerHTML = '<tr><td colspan="4" style="color:var(--text-muted);text-align:center">Loading...</td></tr>';
+      el.innerHTML = '<div class="empty-state">No sessions</div>';
       return;
     }
 
-    var periods = [stats.today, stats.this_week, stats.this_month, stats.total];
-    var html = periods.map(function(p) {
-      var isBold = p.label === 'Total';
-      var style = isBold ? 'font-weight:600' : '';
-      return '<tr style="' + style + '">' +
-        '<td>' + esc(p.label) + '</td>' +
-        '<td style="text-align:right">' + p.sessions + '</td>' +
-        '<td style="text-align:right;color:var(--text-muted)">' + formatTokens(p.total_tokens) + '</td>' +
-        '<td style="text-align:right;color:var(--green-bright)">$' + p.cost_usd.toFixed(2) + '</td>' +
-        '</tr>';
-    }).join('');
+    el.innerHTML = agents.map(function (a) {
+      var dotCls = (a.status || 'unknown').toLowerCase();
+      var cost = a.tokens ? estimateCost(a.tokens) : 0;
+      var costStr = cost > 0 ? '$' + cost.toFixed(2) : '';
+      var model = a.model ? shortModel(a.model) : '';
+      var subCount = a.sub_agent_count && a.sub_agent_count > 0 ? ' (' + a.sub_agent_count + ')' : '';
 
-    if (stats.by_project && stats.by_project.length > 0) {
-      html += '<tr><td colspan="4" style="font-weight:600;padding-top:12px;border-bottom:none">By Project</td></tr>';
-      html += stats.by_project.slice(0, 8).map(function(p) {
-        return '<tr>' +
-          '<td>' + esc(p.label) + '</td>' +
-          '<td style="text-align:right">' + p.sessions + '</td>' +
-          '<td style="text-align:right;color:var(--text-muted)">' + formatTokens(p.total_tokens) + '</td>' +
-          '<td style="text-align:right;color:var(--green-bright)">$' + p.cost_usd.toFixed(2) + '</td>' +
-          '</tr>';
-      }).join('');
-    }
-
-    body.innerHTML = html;
-  }
-
-  function renderTodos(todos) {
-    var tbody = document.getElementById('todos-body');
-    var empty = document.getElementById('todos-empty');
-
-    if (todos.length === 0) {
-      tbody.innerHTML = '';
-      empty.style.display = 'block';
-      return;
-    }
-    empty.style.display = 'none';
-
-    tbody.innerHTML = todos.map(function(todo) {
-      var status = todo.status || 'pending';
-      var symbol = taskSymbol(status);
-      var label = taskLabel(status);
-      var display = (status === 'in_progress' && todo.active_form) ? todo.active_form : todo.content;
-
-      return '<tr>' +
-        '<td class="task-' + status + '">' + symbol + ' ' + esc(label) + '</td>' +
-        '<td>' + esc(display) + '</td>' +
-        '</tr>';
+      return '<div class="agent-item">' +
+        '<div class="agent-dot ' + dotCls + '"></div>' +
+        '<div class="agent-info">' +
+          '<div class="agent-name">' + esc(a.name) + esc(subCount) + '</div>' +
+          '<div class="agent-meta">' +
+            (model ? '<span class="model">' + esc(model) + '</span>' : '') +
+            '<span>' + formatTokens(tokenTotal(a.tokens)) + '</span>' +
+          '</div>' +
+        '</div>' +
+        (costStr ? '<div class="agent-cost">' + costStr + '</div>' : '') +
+        '</div>';
     }).join('');
   }
 
-  function renderActivity(events, isAll) {
-    var feed = document.getElementById('activity-feed');
-    var empty = document.getElementById('activity-empty');
+  // ─── Bottom Panel ───
+  function renderBottomPanel() {
+    if (!state.snapshot || !state.snapshot.teams) return;
+    var team = state.snapshot.teams[state.teamIndex] || state.snapshot.teams[0];
+    var isAll = team.name === 'all';
+    var el = document.getElementById('panel-content');
 
+    switch (state.bottomTab) {
+      case 'activity': renderActivity(el, team.tool_events || [], isAll); break;
+      case 'todos': renderTodos(el, team.todos || []); break;
+      case 'messages': renderMessages(el, team.messages || []); break;
+    }
+  }
+
+  function renderActivity(el, events, isAll) {
     if (events.length === 0) {
-      feed.innerHTML = '';
-      empty.style.display = 'block';
+      el.innerHTML = '<div class="empty-state">No activity yet</div>';
       return;
     }
-    empty.style.display = 'none';
-
-    var recent = events.slice(-50); // chronological, newest at bottom (tail style)
-    feed.innerHTML = recent.map(function(ev) {
+    var recent = events.slice(-80);
+    el.innerHTML = recent.map(function (ev) {
       var time = formatTime(ev.timestamp);
       var tool = ev.tool_name || '?';
-      var toolClass = 'tool-' + tool.toLowerCase();
+      var toolCls = 'tool-' + tool.toLowerCase();
       var summary = ev.summary || '';
-      var duration = ev.duration_ms ? ' ' + ev.duration_ms + 'ms' : '';
+      var dur = ev.duration_ms ? ev.duration_ms + 'ms' : '';
 
-      // Show session name from cwd (like TUI does)
-      var sessionLabel = '';
+      var agent = '';
       if (isAll && ev.cwd) {
         var parts = ev.cwd.split('/');
-        sessionLabel = parts[parts.length - 1] || '';
+        agent = parts[parts.length - 1] || '';
       }
 
       return '<div class="feed-item">' +
-        '<span class="time">' + esc(time) + '</span>' +
-        (sessionLabel ? '<span class="session-label">' + esc(sessionLabel) + '</span>' : '') +
-        '<span class="' + toolClass + '" style="min-width:50px">' + esc(tool) + '</span>' +
-        '<span class="feed-summary">' + esc(truncate(summary, 80)) + '</span>' +
-        '<span class="time">' + esc(duration) + '</span>' +
+        '<span class="feed-time">' + esc(time) + '</span>' +
+        (agent ? '<span class="feed-agent">' + esc(agent) + '</span>' : '') +
+        '<span class="feed-tool ' + toolCls + '">' + esc(tool) + '</span>' +
+        '<span class="feed-summary">' + esc(truncate(summary, 100)) + '</span>' +
+        (dur ? '<span class="feed-duration">' + dur + '</span>' : '') +
         '</div>';
     }).join('');
+
+    // Auto-scroll to bottom
+    el.scrollTop = el.scrollHeight;
   }
 
-  function renderMessages(messages) {
-    var feed = document.getElementById('messages-feed');
-    var empty = document.getElementById('messages-empty');
-
-    var filtered = messages.filter(function(m) {
-      return m.msg_type !== 'idle_notification';
-    });
-
-    if (filtered.length === 0) {
-      feed.innerHTML = '';
-      empty.style.display = 'block';
+  function renderTodos(el, todos) {
+    if (todos.length === 0) {
+      el.innerHTML = '<div class="empty-state">No active todos</div>';
       return;
     }
-    empty.style.display = 'none';
-
-    var recent = filtered.slice(-50);
-    feed.innerHTML = recent.map(function(msg) {
-      var time = formatTime(msg.timestamp);
-      var from = msg.from || '?';
-      var to = msg.to || '?';
-      var summary = msg.summary || msg.text || '';
-
-      return '<div class="feed-item">' +
-        '<span class="time">' + esc(time) + '</span>' +
-        '<span style="color:var(--cyan)">' + esc(from) + '</span>' +
-        '<span class="arrow">\u2192</span>' +
-        '<span style="color:var(--blue-bright)">' + esc(to) + '</span>' +
-        '<span>' + esc(truncate(summary, 100)) + '</span>' +
+    el.innerHTML = todos.map(function (t) {
+      var status = t.status || 'pending';
+      var sym = { completed: '\u2713', in_progress: '\u25cf', pending: '\u25cb', blocked: '\u2298' }[status] || '?';
+      var label = { completed: 'done', in_progress: 'running', pending: 'pending', blocked: 'blocked' }[status] || status;
+      var text = (status === 'in_progress' && t.active_form) ? t.active_form : t.content;
+      return '<div class="todo-item">' +
+        '<span class="todo-status ' + status + '">' + sym + ' ' + esc(label) + '</span>' +
+        '<span class="todo-content">' + esc(text) + '</span>' +
         '</div>';
     }).join('');
   }
 
-  // Helpers
-  function formatTokens(n) {
-    if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
-    if (n >= 1000) return (n / 1000).toFixed(0) + 'K';
-    return String(n);
+  function renderMessages(el, messages) {
+    var filtered = messages.filter(function (m) { return m.msg_type !== 'idle_notification'; });
+    if (filtered.length === 0) {
+      el.innerHTML = '<div class="empty-state">No messages yet</div>';
+      return;
+    }
+    var recent = filtered.slice(-50);
+    el.innerHTML = recent.map(function (m) {
+      var time = formatTime(m.timestamp);
+      var summary = m.summary || m.text || '';
+      return '<div class="feed-item">' +
+        '<span class="feed-time">' + esc(time) + '</span>' +
+        '<span class="msg-from">' + esc(m.from) + '</span>' +
+        '<span class="msg-arrow">\u2192</span>' +
+        '<span class="msg-to">' + esc(m.to) + '</span>' +
+        '<span class="msg-text">' + esc(truncate(summary, 100)) + '</span>' +
+        '</div>';
+    }).join('');
+    el.scrollTop = el.scrollHeight;
   }
 
-  // Use pre-computed cost from server (tiered pricing), fallback to flat rate estimate
+  // ─── Charts ───
+  function renderCharts() {
+    if (!state.stats) return;
+    var isDark = state.theme === 'dark';
+    var textColor = isDark ? '#94a3b8' : '#64748b';
+    var gridColor = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.06)';
+
+    Chart.defaults.color = textColor;
+    Chart.defaults.borderColor = gridColor;
+
+    renderTokenChart(state.stats.daily || [], textColor, gridColor, isDark);
+    renderCostChart(state.stats.daily || [], textColor, gridColor, isDark);
+    renderProjectChart(state.stats.by_project || [], isDark);
+  }
+
+  function renderTokenChart(daily, textColor, gridColor, isDark) {
+    if (state.charts.token) state.charts.token.destroy();
+    var ctx = document.getElementById('token-chart');
+    if (!ctx) return;
+
+    var labels = daily.map(function (d) { return d.date.slice(5); }); // MM-DD
+    state.charts.token = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [
+          {
+            label: 'Input',
+            data: daily.map(function (d) { return d.input_tokens; }),
+            borderColor: isDark ? '#60a5fa' : '#2563eb',
+            backgroundColor: isDark ? 'rgba(96,165,250,0.1)' : 'rgba(37,99,235,0.1)',
+            fill: true, tension: 0.4, pointRadius: 0, borderWidth: 2
+          },
+          {
+            label: 'Output',
+            data: daily.map(function (d) { return d.output_tokens; }),
+            borderColor: isDark ? '#a78bfa' : '#7c3aed',
+            backgroundColor: isDark ? 'rgba(167,139,250,0.1)' : 'rgba(124,58,237,0.1)',
+            fill: true, tension: 0.4, pointRadius: 0, borderWidth: 2
+          },
+          {
+            label: 'Cache',
+            data: daily.map(function (d) { return d.cache_tokens; }),
+            borderColor: isDark ? '#22d3ee' : '#0891b2',
+            backgroundColor: isDark ? 'rgba(34,211,238,0.08)' : 'rgba(8,145,178,0.08)',
+            fill: true, tension: 0.4, pointRadius: 0, borderWidth: 2
+          }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { position: 'top', labels: { boxWidth: 12, padding: 12, font: { size: 11 } } },
+          tooltip: {
+            callbacks: {
+              label: function (ctx) { return ctx.dataset.label + ': ' + formatTokens(ctx.raw); }
+            }
+          }
+        },
+        scales: {
+          x: { grid: { display: false }, ticks: { font: { size: 10 }, maxRotation: 0 } },
+          y: {
+            grid: { color: gridColor },
+            ticks: {
+              font: { size: 10 },
+              callback: function (v) { return formatTokens(v); }
+            }
+          }
+        }
+      }
+    });
+  }
+
+  function renderCostChart(daily, textColor, gridColor, isDark) {
+    if (state.charts.cost) state.charts.cost.destroy();
+    var ctx = document.getElementById('cost-chart');
+    if (!ctx) return;
+
+    var labels = daily.map(function (d) { return d.date.slice(5); });
+    state.charts.cost = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: labels,
+        datasets: [{
+          label: 'Cost',
+          data: daily.map(function (d) { return Math.round(d.cost_usd * 100) / 100; }),
+          backgroundColor: isDark ? 'rgba(99,102,241,0.6)' : 'rgba(99,102,241,0.7)',
+          borderColor: isDark ? '#6366f1' : '#4f46e5',
+          borderWidth: 1, borderRadius: 3, barPercentage: 0.7
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: function (ctx) { return '$' + ctx.raw.toFixed(2); } } }
+        },
+        scales: {
+          x: { grid: { display: false }, ticks: { font: { size: 10 }, maxRotation: 0 } },
+          y: {
+            grid: { color: gridColor },
+            ticks: { font: { size: 10 }, callback: function (v) { return '$' + v; } }
+          }
+        }
+      }
+    });
+  }
+
+  function renderProjectChart(projects, isDark) {
+    if (state.charts.project) state.charts.project.destroy();
+    var ctx = document.getElementById('project-chart');
+    if (!ctx) return;
+
+    var top = projects.slice(0, 6);
+    var colors = isDark
+      ? ['#6366f1', '#8b5cf6', '#a78bfa', '#60a5fa', '#22d3ee', '#34d399']
+      : ['#4f46e5', '#7c3aed', '#8b5cf6', '#2563eb', '#0891b2', '#059669'];
+
+    state.charts.project = new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: top.map(function (p) { return p.label; }),
+        datasets: [{
+          data: top.map(function (p) { return Math.round(p.cost_usd * 100) / 100; }),
+          backgroundColor: colors.slice(0, top.length),
+          borderWidth: 0, hoverOffset: 4
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        cutout: '60%',
+        plugins: {
+          legend: {
+            position: 'right',
+            labels: { boxWidth: 10, padding: 8, font: { size: 11 } }
+          },
+          tooltip: { callbacks: { label: function (ctx) { return ctx.label + ': $' + ctx.raw.toFixed(2); } } }
+        }
+      }
+    });
+  }
+
+  // ─── Helpers ───
+  function tokenTotal(tokens) {
+    if (!tokens) return 0;
+    return (tokens.input_tokens || 0) + (tokens.output_tokens || 0) +
+      (tokens.cache_read_tokens || 0) + (tokens.cache_create_5m_tokens || 0) +
+      (tokens.cache_create_1h_tokens || 0);
+  }
+
   function estimateCost(tokens) {
+    if (!tokens) return 0;
     if (tokens.cost_usd && tokens.cost_usd > 0) return tokens.cost_usd;
-    var input = tokens.input_tokens / 1000000 * 5;
-    var output = tokens.output_tokens / 1000000 * 25;
-    var cw5m = (tokens.cache_create_5m_tokens || 0) / 1000000 * 6.25;
-    var cw1h = (tokens.cache_create_1h_tokens || 0) / 1000000 * 10;
-    var cacheRead = tokens.cache_read_tokens / 1000000 * 0.50;
-    return input + output + cw5m + cw1h + cacheRead;
+    var i = (tokens.input_tokens || 0) / 1e6 * 5;
+    var o = (tokens.output_tokens || 0) / 1e6 * 25;
+    var cr = (tokens.cache_read_tokens || 0) / 1e6 * 0.5;
+    var cw = (tokens.cache_create_5m_tokens || 0) / 1e6 * 6.25;
+    var cw1h = (tokens.cache_create_1h_tokens || 0) / 1e6 * 10;
+    return i + o + cr + cw + cw1h;
   }
 
-  function taskSymbol(status) {
-    switch (status) {
-      case 'completed': return '\u2713';
-      case 'in_progress': return '\u25cf';
-      case 'pending': return '\u25cb';
-      case 'blocked': return '\u2298';
-      default: return '?';
-    }
+  function formatTokens(n) {
+    if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B';
+    if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+    if (n >= 1e3) return (n / 1e3).toFixed(0) + 'K';
+    return String(n || 0);
   }
 
-  function taskLabel(status) {
-    switch (status) {
-      case 'in_progress': return 'running';
-      case 'completed': return 'done';
-      default: return status;
-    }
+  function shortModel(m) {
+    var l = m.toLowerCase();
+    if (l.indexOf('opus') >= 0) return 'opus';
+    if (l.indexOf('sonnet') >= 0) return 'sonnet';
+    if (l.indexOf('haiku') >= 0) return 'haiku';
+    return m.length > 10 ? m.slice(-8) : m;
   }
 
   function formatTime(ts) {
-    if (!ts) return '--:--:--';
-    try {
-      var d = new Date(ts);
-      return d.toLocaleTimeString('en-US', { hour12: false });
-    } catch (e) {
-      return '--:--:--';
-    }
+    if (!ts) return '--:--';
+    try { return new Date(ts).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }); }
+    catch (e) { return '--:--'; }
   }
 
-  function truncate(s, max) {
-    if (!s) return '';
-    return s.length > max ? s.substring(0, max) + '...' : s;
-  }
-
+  function truncate(s, max) { return s && s.length > max ? s.slice(0, max) + '...' : (s || ''); }
+  function setText(id, v) { var el = document.getElementById(id); if (el) el.textContent = v; }
   function esc(s) {
     if (!s) return '';
-    var div = document.createElement('div');
-    div.appendChild(document.createTextNode(String(s)));
-    return div.innerHTML;
+    var d = document.createElement('div');
+    d.appendChild(document.createTextNode(String(s)));
+    return d.innerHTML;
   }
 })();

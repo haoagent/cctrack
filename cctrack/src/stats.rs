@@ -137,6 +137,18 @@ impl UsageBucket {
     }
 }
 
+/// A single day's aggregated usage — for time-series charts.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct DailyPoint {
+    pub date: String,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_tokens: u64,
+    pub total_tokens: u64,
+    pub cost_usd: f64,
+    pub sessions: usize,
+}
+
 /// Full stats report.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct StatsReport {
@@ -145,6 +157,8 @@ pub struct StatsReport {
     pub this_month: UsageBucket,
     pub total: UsageBucket,
     pub by_project: Vec<UsageBucket>,
+    /// Daily time-series for charts (last 30 days, sorted ascending).
+    pub daily: Vec<DailyPoint>,
 }
 
 /// Scan all Claude Code transcripts and compute usage stats.
@@ -238,6 +252,29 @@ pub fn compute_stats(claude_home: &Path) -> StatsReport {
     let mut by_project: Vec<UsageBucket> = project_map.into_values().collect();
     by_project.sort_by(|a, b| b.cost_usd.partial_cmp(&a.cost_usd).unwrap_or(std::cmp::Ordering::Equal));
     report.by_project = by_project;
+
+    // Build daily time-series (last 30 days)
+    let cutoff = today - chrono::Duration::days(30);
+    let mut daily_map: HashMap<NaiveDate, DailyPoint> = HashMap::new();
+    for s in &sessions {
+        if let Some(date) = s.date {
+            if date >= cutoff {
+                let dp = daily_map.entry(date).or_insert_with(|| DailyPoint {
+                    date: date.format("%Y-%m-%d").to_string(),
+                    ..Default::default()
+                });
+                dp.input_tokens += s.input_tokens;
+                dp.output_tokens += s.output_tokens;
+                dp.cache_tokens += s.cache_read_tokens + s.cache_write_tokens;
+                dp.total_tokens += s.total_tokens();
+                dp.cost_usd += s.cost_usd;
+                dp.sessions += 1;
+            }
+        }
+    }
+    let mut daily: Vec<DailyPoint> = daily_map.into_values().collect();
+    daily.sort_by(|a, b| a.date.cmp(&b.date));
+    report.daily = daily;
 
     report
 }

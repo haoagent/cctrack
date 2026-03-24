@@ -1,86 +1,95 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>cctrack</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <div class="container">
-    <div class="header">
-      <h1>cctrack</h1>
-      <div class="stats">
-        <span><span id="agent-label">Sessions</span>: <span class="value" id="agent-count">0</span></span>
-        <span>Todos: <span class="value" id="todo-progress">0/0</span></span>
-        <span>Events: <span class="value" id="event-count">0</span></span>
-        <span>Cost: <span class="value" id="total-cost">$0.00</span></span>
+  <div id="app">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-left">
+        <div class="logo">cctrack</div>
       </div>
-    </div>
-
-    <div class="tab-bar" id="tab-bar"></div>
-
-    <div class="grid">
-      <!-- Sessions/Agents Panel -->
-      <div class="panel">
-        <div class="panel-title" id="agents-panel-title">Sessions</div>
-        <table>
-          <thead>
-            <tr><th>Name</th><th>Status</th><th>Tokens</th><th>Cost</th></tr>
-          </thead>
-          <tbody id="agents-body"></tbody>
-        </table>
-        <div class="empty-state" id="agents-empty" style="display:none">
-          <h2 id="agents-empty-title">No sessions</h2>
-          <p>Start a Claude Code session</p>
+      <div class="stat-cards">
+        <div class="stat-card">
+          <div class="stat-label">Active</div>
+          <div class="stat-value" id="stat-active">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Sessions</div>
+          <div class="stat-value" id="stat-sessions">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Tokens</div>
+          <div class="stat-value mono" id="stat-tokens">0</div>
+        </div>
+        <div class="stat-card accent">
+          <div class="stat-label">Cost</div>
+          <div class="stat-value mono" id="stat-cost">$0.00</div>
         </div>
       </div>
+      <button class="theme-toggle" id="theme-toggle" title="Toggle theme">
+        <span class="theme-icon" id="theme-icon">&#9790;</span>
+      </button>
+    </header>
 
-      <!-- Stats Panel (ALL tab only) -->
-      <div class="panel" id="stats-panel">
-        <div class="panel-title">Stats</div>
-        <table>
-          <thead>
-            <tr><th></th><th style="text-align:right">Sessions</th><th style="text-align:right">Tokens</th><th style="text-align:right">Cost</th></tr>
-          </thead>
-          <tbody id="stats-body"></tbody>
-        </table>
-      </div>
+    <!-- Team Tabs -->
+    <nav class="team-tabs" id="team-tabs"></nav>
 
-      <!-- Todos Panel (team tabs only) -->
-      <div class="panel" id="todos-panel" style="display:none">
-        <div class="panel-title">Todos</div>
-        <table>
-          <thead>
-            <tr><th>Status</th><th>Todo</th></tr>
-          </thead>
-          <tbody id="todos-body"></tbody>
-        </table>
-        <div class="empty-state" id="todos-empty">
-          <h2>No active todos</h2>
+    <!-- Main Layout -->
+    <div class="main-layout">
+      <!-- Sidebar: Agent List -->
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-title" id="sidebar-title">Sessions</div>
+        <div class="agent-list" id="agent-list"></div>
+      </aside>
+
+      <!-- Content Area -->
+      <main class="content">
+        <!-- Charts Row -->
+        <div class="chart-row" id="chart-row">
+          <div class="card chart-card chart-wide">
+            <div class="card-header">
+              <span class="card-title">Token Usage</span>
+              <span class="card-subtitle">Last 30 days</span>
+            </div>
+            <div class="chart-wrap"><canvas id="token-chart"></canvas></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-header">
+              <span class="card-title">Daily Cost</span>
+              <span class="card-subtitle">USD</span>
+            </div>
+            <div class="chart-wrap"><canvas id="cost-chart"></canvas></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-header">
+              <span class="card-title">By Project</span>
+              <span class="card-subtitle">Cost breakdown</span>
+            </div>
+            <div class="chart-wrap"><canvas id="project-chart"></canvas></div>
+          </div>
         </div>
-      </div>
 
-      <!-- Activity Panel -->
-      <div class="panel full-width">
-        <div class="panel-title">Live Activity</div>
-        <div class="feed" id="activity-feed"></div>
-        <div class="empty-state" id="activity-empty">
-          <p>Enable hooks for live activity: <code>cctrack hooks install</code></p>
+        <!-- Bottom Panel: Activity / Todos / Messages -->
+        <div class="card bottom-panel">
+          <div class="panel-tabs">
+            <button class="panel-tab active" data-tab="activity">Activity</button>
+            <button class="panel-tab" data-tab="todos">Todos</button>
+            <button class="panel-tab" data-tab="messages">Messages</button>
+          </div>
+          <div class="panel-content" id="panel-content"></div>
         </div>
-      </div>
-
-      <!-- Messages Panel (team tabs only) -->
-      <div class="panel full-width" id="messages-panel">
-        <div class="panel-title">Messages</div>
-        <div class="feed" id="messages-feed"></div>
-        <div class="empty-state" id="messages-empty" style="display:none">
-          <h2>No messages yet</h2>
-        </div>
-      </div>
+      </main>
     </div>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>
