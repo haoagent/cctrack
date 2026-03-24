@@ -3,7 +3,7 @@
   'use strict';
 
   var S = { snap: null, stats: null, ti: 0, tab: 'activity',
-    theme: localStorage.getItem('cctrack-theme') || 'dark',
+    theme: localStorage.getItem('cctrack-theme') || 'light',
     ch: { tok: null, cost: null, proj: null } };
 
   document.documentElement.setAttribute('data-theme', S.theme);
