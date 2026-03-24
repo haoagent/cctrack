@@ -202,6 +202,12 @@ td {
   border-bottom: 1px solid var(--border);
   color: var(--text);
 }
+td.name {
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 td.r { text-align: right; }
 td.dim { color: var(--text-2); }
 td.cost { color: var(--green); font-weight: 600; font-family: 'SF Mono', monospace; font-size: 13px; }

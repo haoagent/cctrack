@@ -68,13 +68,16 @@
     var isAll=t.name==='all';
     $('sessions-title', isAll?'Sessions':'Agents');
     var ag=t.agents||[], tb=document.getElementById('sessions-body'), em=document.getElementById('sessions-empty');
+    // Dynamic header: hide Model column on ALL tab
+    var thead = tb.parentElement.querySelector('thead tr');
+    if(thead) thead.innerHTML = '<th>Name</th><th>Status</th>'+(isAll?'':'<th>Model</th>')+'<th class="r">Tokens</th><th class="r">Cost</th>';
     if(!ag.length){ tb.innerHTML=''; em.style.display='block'; return; }
     em.style.display='none';
     tb.innerHTML = ag.map(function(a){
       var s=(a.status||'unknown').toLowerCase(), tok=a.tokens?ttok(a.tokens):0, cost=a.tokens?ecost(a.tokens):0;
       var m=a.model?smodel(a.model):'', sub=a.sub_agent_count&&a.sub_agent_count>0?'<span class="badge">'+a.sub_agent_count+'</span>':'';
-      var displayName = a.name.length > 40 ? a.name.slice(0, 37) + '...' : a.name;
-      return '<tr><td title="'+esc(a.name)+'">'+esc(displayName)+sub+'</td><td><span class="dot-s '+s+'"></span><span class="st '+s+'">'+cap1(a.status)+'</span></td><td class="dim" style="font-size:12px">'+esc(m)+'</td><td class="r tok">'+(tok>0?fmtTok(tok):'\u2014')+'</td><td class="r cost">'+(cost>0?'$'+cost.toFixed(2):'\u2014')+'</td></tr>';
+      var modelCol = isAll ? '' : '<td class="dim" style="font-size:12px">'+esc(m)+'</td>';
+      return '<tr><td class="name" title="'+esc(a.name)+'">'+esc(a.name)+sub+'</td><td><span class="dot-s '+s+'"></span><span class="st '+s+'">'+cap1(a.status)+'</span></td>'+modelCol+'<td class="r tok">'+(tok>0?fmtTok(tok):'\u2014')+'</td><td class="r cost">'+(cost>0?'$'+cost.toFixed(2):'\u2014')+'</td></tr>';
     }).join('');
   }
 
@@ -89,7 +92,12 @@
   function renderStats() {
     var b=document.getElementById('stats-body');
     if(!S.stats){ b.innerHTML='<tr><td colspan="4" class="dim" style="text-align:center">Loading...</td></tr>'; return; }
-    var s=S.stats, ps=[s.today,s.this_week,s.this_month,s.total];
+    var s=S.stats;
+    // Skip rows that are identical to Total (redundant)
+    var ps=[s.today,s.this_week,s.this_month,s.total].filter(function(p,i,arr){
+      if(i===arr.length-1) return true; // always show Total
+      return p.cost_usd !== arr[arr.length-1].cost_usd || p.sessions !== arr[arr.length-1].sessions;
+    });
     var h=ps.map(function(p){ var bl=p.label==='Total'?' bold':'';
       return '<tr><td class="'+bl+'">'+esc(p.label)+'</td><td class="r dim">'+p.sessions+'</td><td class="r tok">'+fmtTok(p.total_tokens)+'</td><td class="r cost">$'+p.cost_usd.toFixed(2)+'</td></tr>';
     }).join('');
@@ -117,11 +125,25 @@
     else renderMessages(el,t.messages||[]);
   }
 
+  function shortTool(name) {
+    if (!name) return '?';
+    // mcp__Claude_in_Chrome__computer → Chrome.computer
+    // mcp__Claude_Preview__preview_screenshot → Preview.screenshot
+    if (name.startsWith('mcp__')) {
+      var parts = name.slice(5).split('__');
+      if (parts.length >= 2) {
+        var svc = parts[0].replace('Claude_in_Chrome','Chrome').replace('Claude_Preview','Preview');
+        return svc + '.' + parts.slice(1).join('.');
+      }
+    }
+    return name;
+  }
+
   function renderActivity(el,evts,isAll) {
     var f=evts.filter(function(e){return e.tool_name!=='startup_scan';});
     if(!f.length){ el.innerHTML='<div class="empty">No activity</div>'; return; }
     el.innerHTML=f.slice(-80).map(function(e){
-      var tm=fmtTime(e.timestamp), tl=e.tool_name||'?', tc='tool-'+tl.toLowerCase(), sm=e.summary||'', dr=e.duration_ms?e.duration_ms+'ms':'';
+      var rawTool=e.tool_name||'?', tl=shortTool(rawTool), tc='tool-'+rawTool.toLowerCase(), sm=e.summary||'', dr=e.duration_ms?e.duration_ms+'ms':'', tm=fmtTime(e.timestamp);
       var ag=''; if(isAll&&e.cwd){var p=e.cwd.split('/');ag=p[p.length-1]||'';}
       return '<div class="fi"><span class="fi-t">'+esc(tm)+'</span>'+(ag?'<span class="fi-a">'+esc(ag)+'</span>':'')+'<span class="fi-tool '+tc+'">'+esc(tl)+'</span><span class="fi-s">'+esc(trunc(sm,120))+'</span>'+(dr?'<span class="fi-d">'+dr+'</span>':'')+'</div>';
     }).join('');
