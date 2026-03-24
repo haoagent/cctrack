@@ -5,154 +5,112 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>cctrack</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
   <div id="app">
-    <!-- Header -->
+    <!-- Minimal Header -->
     <header class="header">
-      <div class="logo">cctrack</div>
-      <div class="stat-cards">
-        <div class="stat-card-mini">
-          <span class="stat-mini-dot" id="stat-active-dot"></span>
-          <span class="stat-mini-label"><span id="stat-active">0</span> active</span>
-          <span class="stat-mini-sep">/</span>
-          <span class="stat-mini-label"><span id="stat-sessions">0</span> <span id="stat-sessions-label">sessions</span></span>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Cache Hit</div>
-          <div class="stat-value mono" id="stat-cache">0%</div>
-        </div>
-        <div class="stat-card hero hero-tokens">
-          <div class="stat-label">Tokens</div>
-          <div class="stat-value mono" id="stat-tokens">0</div>
-        </div>
-        <div class="stat-card hero-cost-card">
-          <div class="stat-label">Total Cost</div>
-          <div class="stat-cost-big mono" id="stat-cost">$0.00</div>
-          <div class="stat-cost-today mono" id="stat-today-cost">today $0.00</div>
-        </div>
+      <span class="logo">cctrack</span>
+      <nav class="tabs" id="team-tabs"></nav>
+      <div class="header-right">
+        <button class="icon-btn" id="theme-toggle"><span id="theme-icon">&#9790;</span></button>
       </div>
-      <button class="theme-toggle" id="theme-toggle" title="Toggle theme">
-        <span id="theme-icon">&#9790;</span>
-      </button>
     </header>
 
-    <!-- Cap Utilization Bar (between header and tabs, always visible) -->
-    <div class="cap-card" id="cap-card">
-        <div class="cap-row">
-          <div class="cap-info">
-            <span class="cap-label">5h Window</span>
-            <span class="cap-plan" id="cap-plan">max5</span>
-          </div>
-          <div class="cap-bar-wrap">
-            <div class="cap-bar">
-              <div class="cap-bar-fill" id="cap-bar-fill" style="width:0%"></div>
-            </div>
-            <div class="cap-numbers">
-              <span class="mono" id="cap-used">0</span>
-              <span class="cap-sep">/</span>
-              <span class="mono" id="cap-total">88K</span>
-              <span class="cap-pct" id="cap-pct">0%</span>
-            </div>
-          </div>
-          <div class="cap-stats">
-            <div class="cap-stat">
-              <span class="cap-stat-label">Avg Util</span>
-              <span class="cap-stat-value" id="cap-avg-util">0%</span>
-            </div>
-            <div class="cap-stat">
-              <span class="cap-stat-label">Waste (48h)</span>
-              <span class="cap-stat-value cap-waste" id="cap-waste">0</span>
-            </div>
-          </div>
+    <!-- Hero Numbers -->
+    <section class="hero">
+      <div class="hero-group">
+        <div class="hero-item primary">
+          <div class="hero-number mono" id="hero-cost">$0</div>
+          <div class="hero-label">total cost</div>
+        </div>
+        <div class="hero-item">
+          <div class="hero-number mono" id="hero-tokens">0</div>
+          <div class="hero-label">tokens</div>
+        </div>
+        <div class="hero-item">
+          <div class="hero-number" id="hero-sessions">0</div>
+          <div class="hero-label" id="hero-sessions-label">sessions</div>
+        </div>
+        <div class="hero-item">
+          <div class="hero-number" id="hero-cache">0%</div>
+          <div class="hero-label">cache hit</div>
         </div>
       </div>
-
-    <!-- Team Tabs -->
-    <nav class="team-tabs" id="team-tabs"></nav>
-
-    <!-- Main Content -->
-    <div class="main-content">
-      <!-- Top Row: Sessions + Stats/Todos -->
-      <div class="top-row">
-        <div class="card" id="sessions-card">
-          <div class="card-header">
-            <span class="card-title" id="sessions-title">Sessions</span>
-          </div>
-          <div class="table-wrap" id="sessions-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Status</th>
-                  <th class="right">Model</th>
-                  <th class="right">Tokens</th>
-                  <th class="right">Cost</th>
-                </tr>
-              </thead>
-              <tbody id="sessions-body"></tbody>
-            </table>
-            <div class="empty-state" id="sessions-empty" style="display:none">No sessions</div>
-          </div>
+      <!-- Cap bar inline -->
+      <div class="cap-inline" id="cap-inline">
+        <div class="cap-left">
+          <span class="cap-text"><span id="cap-plan">max5</span> &middot; <span class="mono" id="cap-used">0</span> / <span class="mono" id="cap-total">88K</span></span>
         </div>
-
-        <!-- Stats (ALL tab) or Todos (team tab) -->
-        <div class="card" id="right-card">
-          <div class="card-header">
-            <span class="card-title" id="right-title">Stats</span>
-          </div>
-          <div class="table-wrap" id="right-wrap">
-            <table id="stats-table">
-              <thead>
-                <tr><th></th><th class="right">Sessions</th><th class="right">Tokens</th><th class="right">Cost</th></tr>
-              </thead>
-              <tbody id="stats-body"></tbody>
-            </table>
-            <table id="todos-table" style="display:none">
-              <thead>
-                <tr><th>Status</th><th>Todo</th></tr>
-              </thead>
-              <tbody id="todos-body"></tbody>
-            </table>
-            <div class="empty-state" id="right-empty" style="display:none">No data</div>
-          </div>
+        <div class="cap-track">
+          <div class="cap-fill" id="cap-fill"></div>
+        </div>
+        <div class="cap-right">
+          <span class="cap-pct mono" id="cap-pct">0%</span>
+          <span class="cap-meta">waste <span class="cap-waste mono" id="cap-waste">0</span></span>
         </div>
       </div>
+    </section>
 
-      <!-- Charts Row -->
-      <div class="chart-row">
-        <div class="card chart-card chart-wide">
-          <div class="card-header">
-            <span class="card-title">Token Usage</span>
-            <span class="card-subtitle">Last 30 days</span>
-          </div>
-          <div class="chart-wrap"><canvas id="token-chart"></canvas></div>
+    <!-- Main Grid -->
+    <main class="grid">
+      <!-- Sessions Table -->
+      <section class="card sessions-card">
+        <h2 class="card-title" id="sessions-title">Sessions</h2>
+        <div class="table-scroll">
+          <table>
+            <thead><tr>
+              <th>Name</th><th>Status</th><th>Model</th><th class="r">Tokens</th><th class="r">Cost</th>
+            </tr></thead>
+            <tbody id="sessions-body"></tbody>
+          </table>
+          <div class="empty" id="sessions-empty" style="display:none">No sessions</div>
         </div>
-        <div class="card chart-card">
-          <div class="card-header">
-            <span class="card-title">Daily Cost</span>
-          </div>
-          <div class="chart-wrap"><canvas id="cost-chart"></canvas></div>
-        </div>
-        <div class="card chart-card">
-          <div class="card-header">
-            <span class="card-title">By Project</span>
-          </div>
-          <div class="chart-wrap"><canvas id="project-chart"></canvas></div>
-        </div>
-      </div>
+      </section>
 
-      <!-- Bottom: Activity + Messages Tabs -->
-      <div class="card bottom-panel">
-        <div class="panel-tabs">
-          <button class="panel-tab active" data-tab="activity">Activity</button>
-          <button class="panel-tab" data-tab="messages">Messages</button>
+      <!-- Stats / Todos -->
+      <section class="card">
+        <h2 class="card-title" id="right-title">Stats</h2>
+        <div class="table-scroll">
+          <table id="stats-table">
+            <thead><tr><th></th><th class="r">Sessions</th><th class="r">Tokens</th><th class="r">Cost</th></tr></thead>
+            <tbody id="stats-body"></tbody>
+          </table>
+          <table id="todos-table" style="display:none">
+            <thead><tr><th>Status</th><th>Todo</th></tr></thead>
+            <tbody id="todos-body"></tbody>
+          </table>
+          <div class="empty" id="right-empty" style="display:none">No data</div>
         </div>
-        <div class="panel-content" id="panel-content"></div>
-      </div>
-    </div>
+      </section>
+
+      <!-- Charts -->
+      <section class="card chart-card span-2">
+        <h2 class="card-title">Token Usage <span class="subtitle">30 days</span></h2>
+        <div class="chart-box"><canvas id="token-chart"></canvas></div>
+      </section>
+
+      <section class="card chart-card">
+        <h2 class="card-title">Daily Cost</h2>
+        <div class="chart-box"><canvas id="cost-chart"></canvas></div>
+      </section>
+
+      <section class="card chart-card">
+        <h2 class="card-title">By Project</h2>
+        <div class="chart-box"><canvas id="project-chart"></canvas></div>
+      </section>
+
+      <!-- Activity -->
+      <section class="card span-full">
+        <div class="panel-header">
+          <button class="ptab active" data-tab="activity">Activity</button>
+          <button class="ptab" data-tab="messages">Messages</button>
+        </div>
+        <div class="feed" id="panel-content"></div>
+      </section>
+    </main>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
