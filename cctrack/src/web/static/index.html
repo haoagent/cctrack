@@ -12,80 +12,115 @@
   <div id="app">
     <!-- Header -->
     <header class="header">
-      <div class="header-left">
-        <div class="logo">cctrack</div>
-      </div>
+      <div class="logo">cctrack</div>
       <div class="stat-cards">
-        <div class="stat-card">
-          <div class="stat-label">Active</div>
-          <div class="stat-value" id="stat-active">0</div>
+        <div class="stat-card-mini">
+          <span class="stat-mini-dot" id="stat-active-dot"></span>
+          <span class="stat-mini-label"><span id="stat-active">0</span> active</span>
+          <span class="stat-mini-sep">/</span>
+          <span class="stat-mini-label"><span id="stat-sessions">0</span> <span id="stat-sessions-label">sessions</span></span>
         </div>
         <div class="stat-card">
-          <div class="stat-label">Sessions</div>
-          <div class="stat-value" id="stat-sessions">0</div>
+          <div class="stat-label">Cache Hit</div>
+          <div class="stat-value mono" id="stat-cache">0%</div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card hero hero-tokens">
           <div class="stat-label">Tokens</div>
           <div class="stat-value mono" id="stat-tokens">0</div>
         </div>
-        <div class="stat-card accent">
-          <div class="stat-label">Cost</div>
-          <div class="stat-value mono" id="stat-cost">$0.00</div>
+        <div class="stat-card hero-cost-card">
+          <div class="stat-label">Total Cost</div>
+          <div class="stat-cost-big mono" id="stat-cost">$0.00</div>
+          <div class="stat-cost-today mono" id="stat-today-cost">today $0.00</div>
         </div>
       </div>
       <button class="theme-toggle" id="theme-toggle" title="Toggle theme">
-        <span class="theme-icon" id="theme-icon">&#9790;</span>
+        <span id="theme-icon">&#9790;</span>
       </button>
     </header>
 
     <!-- Team Tabs -->
     <nav class="team-tabs" id="team-tabs"></nav>
 
-    <!-- Main Layout -->
-    <div class="main-layout">
-      <!-- Sidebar: Agent List -->
-      <aside class="sidebar" id="sidebar">
-        <div class="sidebar-title" id="sidebar-title">Sessions</div>
-        <div class="agent-list" id="agent-list"></div>
-      </aside>
-
-      <!-- Content Area -->
-      <main class="content">
-        <!-- Charts Row -->
-        <div class="chart-row" id="chart-row">
-          <div class="card chart-card chart-wide">
-            <div class="card-header">
-              <span class="card-title">Token Usage</span>
-              <span class="card-subtitle">Last 30 days</span>
-            </div>
-            <div class="chart-wrap"><canvas id="token-chart"></canvas></div>
+    <!-- Main Content -->
+    <div class="main-content">
+      <!-- Top Row: Sessions + Stats/Todos -->
+      <div class="top-row">
+        <div class="card" id="sessions-card">
+          <div class="card-header">
+            <span class="card-title" id="sessions-title">Sessions</span>
           </div>
-          <div class="card chart-card">
-            <div class="card-header">
-              <span class="card-title">Daily Cost</span>
-              <span class="card-subtitle">USD</span>
-            </div>
-            <div class="chart-wrap"><canvas id="cost-chart"></canvas></div>
-          </div>
-          <div class="card chart-card">
-            <div class="card-header">
-              <span class="card-title">By Project</span>
-              <span class="card-subtitle">Cost breakdown</span>
-            </div>
-            <div class="chart-wrap"><canvas id="project-chart"></canvas></div>
+          <div class="table-wrap" id="sessions-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Status</th>
+                  <th class="right">Model</th>
+                  <th class="right">Tokens</th>
+                  <th class="right">Cost</th>
+                </tr>
+              </thead>
+              <tbody id="sessions-body"></tbody>
+            </table>
+            <div class="empty-state" id="sessions-empty" style="display:none">No sessions</div>
           </div>
         </div>
 
-        <!-- Bottom Panel: Activity / Todos / Messages -->
-        <div class="card bottom-panel">
-          <div class="panel-tabs">
-            <button class="panel-tab active" data-tab="activity">Activity</button>
-            <button class="panel-tab" data-tab="todos">Todos</button>
-            <button class="panel-tab" data-tab="messages">Messages</button>
+        <!-- Stats (ALL tab) or Todos (team tab) -->
+        <div class="card" id="right-card">
+          <div class="card-header">
+            <span class="card-title" id="right-title">Stats</span>
           </div>
-          <div class="panel-content" id="panel-content"></div>
+          <div class="table-wrap" id="right-wrap">
+            <table id="stats-table">
+              <thead>
+                <tr><th></th><th class="right">Sessions</th><th class="right">Tokens</th><th class="right">Cost</th></tr>
+              </thead>
+              <tbody id="stats-body"></tbody>
+            </table>
+            <table id="todos-table" style="display:none">
+              <thead>
+                <tr><th>Status</th><th>Todo</th></tr>
+              </thead>
+              <tbody id="todos-body"></tbody>
+            </table>
+            <div class="empty-state" id="right-empty" style="display:none">No data</div>
+          </div>
         </div>
-      </main>
+      </div>
+
+      <!-- Charts Row -->
+      <div class="chart-row">
+        <div class="card chart-card chart-wide">
+          <div class="card-header">
+            <span class="card-title">Token Usage</span>
+            <span class="card-subtitle">Last 30 days</span>
+          </div>
+          <div class="chart-wrap"><canvas id="token-chart"></canvas></div>
+        </div>
+        <div class="card chart-card">
+          <div class="card-header">
+            <span class="card-title">Daily Cost</span>
+          </div>
+          <div class="chart-wrap"><canvas id="cost-chart"></canvas></div>
+        </div>
+        <div class="card chart-card">
+          <div class="card-header">
+            <span class="card-title">By Project</span>
+          </div>
+          <div class="chart-wrap"><canvas id="project-chart"></canvas></div>
+        </div>
+      </div>
+
+      <!-- Bottom: Activity + Messages Tabs -->
+      <div class="card bottom-panel">
+        <div class="panel-tabs">
+          <button class="panel-tab active" data-tab="activity">Activity</button>
+          <button class="panel-tab" data-tab="messages">Messages</button>
+        </div>
+        <div class="panel-content" id="panel-content"></div>
+      </div>
     </div>
   </div>
 
