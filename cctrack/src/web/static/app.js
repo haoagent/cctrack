@@ -41,32 +41,17 @@
     if (!S.snap || !S.snap.teams || !S.snap.teams.length) return;
     if (S.ti >= S.snap.teams.length) S.ti = 0;
     var t = S.snap.teams[S.ti];
-    renderHero(t); renderTabs(S.snap.teams); renderSessions(t); renderRight(t); renderFeed();
+    renderHero(); renderTabs(S.snap.teams); renderSessions(t); renderRight(t); renderFeed();
   }
 
-  function renderHero(t) {
-    if (!t && S.snap) t = S.snap.teams[S.ti];
-    if (!t) return;
-    var ag = t.agents||[], isAll = t.name==='all';
-
-    // Use stats for today/month (includes active sessions now)
+  function renderHero() {
     if (S.stats) {
       $('hero-cost', '$'+S.stats.today.cost_usd.toFixed(2));
-      $('hero-tokens', fmtTok(S.stats.today.total_tokens));
-      $('hero-month-cost', '$'+S.stats.this_month.cost_usd.toFixed(2));
-      $('hero-month-label', S.stats.this_month.label || 'this month');
-    } else {
-      // Fallback to live session data before stats load
-      var tok=0, cost=0;
-      ag.forEach(function(a){ if(a.tokens){ tok+=ttok(a.tokens); cost+=ecost(a.tokens); }});
+    } else if (S.snap && S.snap.teams && S.snap.teams[S.ti]) {
+      var cost=0;
+      (S.snap.teams[S.ti].agents||[]).forEach(function(a){ if(a.tokens) cost+=ecost(a.tokens); });
       $('hero-cost', '$'+cost.toFixed(2));
-      $('hero-tokens', fmtTok(tok));
-      $('hero-month-cost', '—');
     }
-
-    var activeCount = ag.filter(function(a){return a.status==='Active';}).length;
-    $('hero-sessions', activeCount + ' / ' + ag.length);
-    $('hero-sessions-label', isAll ? 'active / sessions' : 'active / agents');
   }
 
   function renderTabs(teams) {
