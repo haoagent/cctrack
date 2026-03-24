@@ -149,6 +149,42 @@ pub struct DailyPoint {
     pub sessions: usize,
 }
 
+/// A 5-hour usage window for cap utilization tracking.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct CapWindow {
+    /// Window start time (ISO 8601).
+    pub start: String,
+    /// Window end time (ISO 8601).
+    pub end: String,
+    /// Output tokens consumed in this window.
+    pub output_tokens: u64,
+    /// Plan's 5h output token cap.
+    pub cap: u64,
+    /// Utilization percentage (0-100).
+    pub utilization_pct: f64,
+    /// Wasted tokens (cap - used, 0 if still open).
+    pub waste: u64,
+    /// Whether this window is currently active (not yet expired).
+    pub is_current: bool,
+}
+
+/// Cap utilization summary.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct CapSummary {
+    /// Current 5h window.
+    pub current: Option<CapWindow>,
+    /// Recent completed windows (last 48h, newest first).
+    pub history: Vec<CapWindow>,
+    /// Average utilization % across completed windows.
+    pub avg_utilization_pct: f64,
+    /// Total wasted output tokens across completed windows.
+    pub total_waste: u64,
+    /// Plan tier name.
+    pub plan: String,
+    /// 5h cap value.
+    pub cap_per_window: u64,
+}
+
 /// Full stats report.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct StatsReport {
@@ -159,6 +195,8 @@ pub struct StatsReport {
     pub by_project: Vec<UsageBucket>,
     /// Daily time-series for charts (last 30 days, sorted ascending).
     pub daily: Vec<DailyPoint>,
+    /// 5h window cap utilization.
+    pub cap: CapSummary,
 }
 
 /// Scan all Claude Code transcripts and compute usage stats.
@@ -276,7 +314,143 @@ pub fn compute_stats(claude_home: &Path) -> StatsReport {
     daily.sort_by(|a, b| a.date.cmp(&b.date));
     report.daily = daily;
 
+    // Build 5h window cap utilization
+    let plan = crate::config::Config::load().plan;
+    report.cap = compute_cap_windows(&projects_dir, &plan);
+
     report
+}
+
+/// Compute 5h window cap utilization by scanning transcripts for output tokens.
+fn compute_cap_windows(projects_dir: &Path, plan: &crate::config::PlanConfig) -> CapSummary {
+    let cap = plan.output_cap_5h();
+    let now = Utc::now();
+    let cutoff = now - chrono::Duration::hours(48);
+
+    // Collect all (timestamp, output_tokens) from recent transcripts
+    let mut events: Vec<(chrono::DateTime<Utc>, u64)> = Vec::new();
+
+    if let Ok(project_dirs) = std::fs::read_dir(projects_dir) {
+        for project_entry in project_dirs.flatten() {
+            let project_path = project_entry.path();
+            if !project_path.is_dir() { continue; }
+            if let Ok(files) = std::fs::read_dir(&project_path) {
+                for file_entry in files.flatten() {
+                    let file_path = file_entry.path();
+                    if file_path.extension().and_then(|e| e.to_str()) != Some("jsonl") { continue; }
+                    // Only scan recent files (modified within 48h)
+                    if let Ok(meta) = file_path.metadata() {
+                        if let Ok(modified) = meta.modified() {
+                            if modified.elapsed().map(|d| d.as_secs() > 48 * 3600).unwrap_or(true) {
+                                continue;
+                            }
+                        }
+                    }
+                    collect_output_events(&file_path, &cutoff, &mut events);
+                }
+            }
+        }
+    }
+
+    events.sort_by_key(|e| e.0);
+    if events.is_empty() {
+        return CapSummary {
+            plan: plan.tier.clone(),
+            cap_per_window: cap,
+            ..Default::default()
+        };
+    }
+
+    // Build 5h windows: first event starts window 0, each window is 5h
+    let window_duration = chrono::Duration::hours(5);
+    let mut windows: Vec<CapWindow> = Vec::new();
+    let mut window_start = events[0].0;
+    let mut window_output: u64 = 0;
+
+    for &(ts, output) in &events {
+        // If this event is beyond the current window, close it and start new
+        while ts >= window_start + window_duration {
+            let window_end = window_start + window_duration;
+            let is_current = now >= window_start && now < window_end;
+            windows.push(CapWindow {
+                start: window_start.to_rfc3339(),
+                end: window_end.to_rfc3339(),
+                output_tokens: window_output,
+                cap,
+                utilization_pct: (window_output as f64 / cap as f64 * 100.0).min(100.0),
+                waste: if is_current { 0 } else { cap.saturating_sub(window_output) },
+                is_current,
+            });
+            window_start = window_end;
+            window_output = 0;
+        }
+        window_output += output;
+    }
+
+    // Close the current/last window
+    let window_end = window_start + window_duration;
+    let is_current = now >= window_start && now < window_end;
+    windows.push(CapWindow {
+        start: window_start.to_rfc3339(),
+        end: window_end.to_rfc3339(),
+        output_tokens: window_output,
+        cap,
+        utilization_pct: (window_output as f64 / cap as f64 * 100.0).min(100.0),
+        waste: if is_current { 0 } else { cap.saturating_sub(window_output) },
+        is_current,
+    });
+
+    // Split current vs history
+    let current = windows.iter().find(|w| w.is_current).cloned();
+    let history: Vec<CapWindow> = windows.iter().filter(|w| !w.is_current).cloned().collect();
+
+    let completed_count = history.len();
+    let avg_util = if completed_count > 0 {
+        history.iter().map(|w| w.utilization_pct).sum::<f64>() / completed_count as f64
+    } else { 0.0 };
+    let total_waste: u64 = history.iter().map(|w| w.waste).sum();
+
+    CapSummary {
+        current,
+        history,
+        avg_utilization_pct: (avg_util * 10.0).round() / 10.0,
+        total_waste,
+        plan: plan.tier.clone(),
+        cap_per_window: cap,
+    }
+}
+
+/// Extract (timestamp, output_tokens) from a transcript file for cap tracking.
+fn collect_output_events(
+    path: &Path,
+    cutoff: &chrono::DateTime<Utc>,
+    events: &mut Vec<(chrono::DateTime<Utc>, u64)>,
+) {
+    let content = match std::fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+
+    for line in content.lines() {
+        if !line.contains("\"output_tokens\"") { continue; }
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(line) {
+            let ts_str = val.get("timestamp").and_then(|v| v.as_str());
+            let output = val.get("message")
+                .and_then(|m| m.get("usage"))
+                .and_then(|u| u.get("output_tokens"))
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+
+            if output == 0 { continue; }
+
+            if let Some(ts) = ts_str.and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok()) {
+                let ts_utc = ts.with_timezone(&Utc);
+                if ts_utc >= *cutoff {
+                    events.push((ts_utc, output));
+                }
+            }
+        }
+    }
 }
 
 /// Parse a single transcript .jsonl file for usage data.

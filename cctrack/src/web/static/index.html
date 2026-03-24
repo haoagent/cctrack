@@ -39,6 +39,37 @@
       </button>
     </header>
 
+    <!-- Cap Utilization Bar (between header and tabs, always visible) -->
+    <div class="cap-card" id="cap-card">
+        <div class="cap-row">
+          <div class="cap-info">
+            <span class="cap-label">5h Window</span>
+            <span class="cap-plan" id="cap-plan">max5</span>
+          </div>
+          <div class="cap-bar-wrap">
+            <div class="cap-bar">
+              <div class="cap-bar-fill" id="cap-bar-fill" style="width:0%"></div>
+            </div>
+            <div class="cap-numbers">
+              <span class="mono" id="cap-used">0</span>
+              <span class="cap-sep">/</span>
+              <span class="mono" id="cap-total">88K</span>
+              <span class="cap-pct" id="cap-pct">0%</span>
+            </div>
+          </div>
+          <div class="cap-stats">
+            <div class="cap-stat">
+              <span class="cap-stat-label">Avg Util</span>
+              <span class="cap-stat-value" id="cap-avg-util">0%</span>
+            </div>
+            <div class="cap-stat">
+              <span class="cap-stat-label">Waste (48h)</span>
+              <span class="cap-stat-value cap-waste" id="cap-waste">0</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
     <!-- Team Tabs -->
     <nav class="team-tabs" id="team-tabs"></nav>
 

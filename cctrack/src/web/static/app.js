@@ -29,7 +29,7 @@
   function fetchStats() {
     fetch('/api/stats')
       .then(function (r) { return r.json(); })
-      .then(function (d) { state.stats = d; renderStats(); renderCharts(); })
+      .then(function (d) { state.stats = d; renderStats(); renderCharts(); renderCap(); })
       .catch(function () {});
   }
   fetchStats();
@@ -416,6 +416,35 @@
         y: { grid: { color: gridColor }, ticks: { font: { size: 10 }, callback: tickFmt } }
       }
     };
+  }
+
+  // ─── Cap Utilization ───
+  function renderCap() {
+    if (!state.stats || !state.stats.cap) return;
+    var cap = state.stats.cap;
+    var current = cap.current;
+
+    setText('cap-plan', cap.plan.toUpperCase());
+    setText('cap-total', formatTokens(cap.cap_per_window));
+    setText('cap-avg-util', cap.avg_utilization_pct.toFixed(1) + '%');
+    setText('cap-waste', formatTokens(cap.total_waste));
+
+    if (current) {
+      var pct = current.utilization_pct;
+      setText('cap-used', formatTokens(current.output_tokens));
+      setText('cap-pct', pct.toFixed(1) + '%');
+
+      var fill = document.getElementById('cap-bar-fill');
+      if (fill) {
+        fill.style.width = Math.min(pct, 100) + '%';
+        fill.className = 'cap-bar-fill' + (pct >= 90 ? ' full' : pct >= 70 ? ' high' : '');
+      }
+    } else {
+      setText('cap-used', '0');
+      setText('cap-pct', 'No active window');
+      var fill = document.getElementById('cap-bar-fill');
+      if (fill) { fill.style.width = '0%'; fill.className = 'cap-bar-fill'; }
+    }
   }
 
   // ─── Helpers ───

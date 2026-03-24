@@ -83,9 +83,6 @@ body {
   height: 56px;
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border);
-  position: sticky;
-  top: 0;
-  z-index: 10;
 }
 
 .logo {
@@ -186,9 +183,6 @@ body {
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border);
   overflow-x: auto;
-  position: sticky;
-  top: 56px;
-  z-index: 9;
 }
 
 .team-tab {
@@ -228,6 +222,52 @@ body {
   max-width: 1600px;
   margin: 0 auto;
 }
+
+/* ─── Cap Utilization Bar ─── */
+.cap-card {
+  padding: 10px 24px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+}
+.cap-row { display: flex; align-items: center; gap: 24px; }
+
+.cap-info { display: flex; align-items: baseline; gap: 8px; min-width: 70px; }
+.cap-label { font-size: 11px; color: var(--text-muted); }
+.cap-plan { font-size: 11px; font-weight: 600; color: var(--accent-light); }
+
+.cap-bar-wrap { flex: 1; }
+.cap-bar {
+  height: 6px;
+  background: var(--bg-elevated);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.cap-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--gradient);
+  transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  min-width: 2px;
+}
+.cap-bar-fill.high { background: linear-gradient(135deg, #f59e0b, #ef4444); }
+.cap-bar-fill.full { background: var(--red); }
+
+.cap-numbers {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.cap-sep { color: var(--text-muted); }
+.cap-pct { margin-left: auto; font-weight: 600; color: var(--text); font-size: 11px; }
+
+.cap-stats { display: flex; gap: 20px; }
+.cap-stat { display: flex; align-items: baseline; gap: 6px; }
+.cap-stat-label { font-size: 11px; color: var(--text-muted); }
+.cap-stat-value { font-size: 13px; font-weight: 600; color: var(--text); font-family: 'JetBrains Mono', monospace; }
+.cap-waste { color: var(--red); opacity: 0.85; }
 
 /* ─── Cards ─── */
 .card {

@@ -11,6 +11,8 @@ pub struct Config {
     pub hooks: HooksConfig,
     #[serde(default)]
     pub ui: UiConfig,
+    #[serde(default)]
+    pub plan: PlanConfig,
 }
 
 impl Default for Config {
@@ -20,8 +22,43 @@ impl Default for Config {
             web: WebConfig::default(),
             hooks: HooksConfig::default(),
             ui: UiConfig::default(),
+            plan: PlanConfig::default(),
         }
     }
+}
+
+/// Claude Code subscription plan — determines the 5h output token cap.
+#[derive(Debug, Deserialize)]
+pub struct PlanConfig {
+    /// Plan type: "pro", "max5", "max20", "custom"
+    #[serde(default = "default_plan")]
+    pub tier: String,
+    /// Custom 5h output token cap (only used when tier = "custom")
+    #[serde(default)]
+    pub custom_cap: Option<u64>,
+}
+
+impl Default for PlanConfig {
+    fn default() -> Self {
+        Self { tier: default_plan(), custom_cap: None }
+    }
+}
+
+impl PlanConfig {
+    /// 5h window output token cap based on plan tier.
+    pub fn output_cap_5h(&self) -> u64 {
+        match self.tier.as_str() {
+            "pro" => 44_000,
+            "max5" => 88_000,
+            "max20" => 220_000,
+            "custom" => self.custom_cap.unwrap_or(88_000),
+            _ => 88_000, // default to max5
+        }
+    }
+}
+
+fn default_plan() -> String {
+    "max5".to_string()
 }
 
 #[derive(Debug, Deserialize)]
