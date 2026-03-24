@@ -1,13 +1,13 @@
 /* cctrack — Minimal Premium Dashboard */
 
 :root, [data-theme="dark"] {
-  --bg: #09090b;
-  --bg-card: #18181b;
-  --bg-hover: #27272a;
-  --border: #27272a;
-  --text: #fafafa;
-  --text-2: #a1a1aa;
-  --text-3: #52525b;
+  --bg: #1A1915;
+  --bg-card: #242320;
+  --bg-hover: #2E2D29;
+  --border: #3A3935;
+  --text: #F4F3EE;
+  --text-2: #B1ADA1;
+  --text-3: #6B6860;
   --accent: #C15F3C;
   --green: #22c55e;
   --yellow: #eab308;
@@ -18,13 +18,13 @@
 }
 
 [data-theme="light"] {
-  --bg: #fafafa;
-  --bg-card: #ffffff;
-  --bg-hover: #f4f4f5;
-  --border: #e4e4e7;
-  --text: #09090b;
-  --text-2: #71717a;
-  --text-3: #a1a1aa;
+  --bg: #F4F3EE;
+  --bg-card: #FFFFFF;
+  --bg-hover: #EAE8E1;
+  --border: #D9D6CC;
+  --text: #1A1915;
+  --text-2: #6B6860;
+  --text-3: #B1ADA1;
   --accent: #C15F3C;
   --green: #16a34a;
   --yellow: #ca8a04;
