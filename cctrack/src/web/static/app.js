@@ -68,16 +68,15 @@
     var isAll=t.name==='all';
     $('sessions-title', isAll?'Sessions':'Agents');
     var ag=t.agents||[], tb=document.getElementById('sessions-body'), em=document.getElementById('sessions-empty');
-    // Dynamic header: hide Model column on ALL tab
+    // Dynamic header: Cost first (most important), Tokens secondary
     var thead = tb.parentElement.querySelector('thead tr');
-    if(thead) thead.innerHTML = '<th>Name</th><th>Status</th>'+(isAll?'':'<th>Model</th>')+'<th class="r">Tokens</th><th class="r">Cost</th>';
+    if(thead) thead.innerHTML = '<th>Name</th><th>Status</th><th class="r">Cost</th><th class="r hide-narrow">Tokens</th>';
     if(!ag.length){ tb.innerHTML=''; em.style.display='block'; return; }
     em.style.display='none';
     tb.innerHTML = ag.map(function(a){
       var s=(a.status||'unknown').toLowerCase(), tok=a.tokens?ttok(a.tokens):0, cost=a.tokens?ecost(a.tokens):0;
       var m=a.model?smodel(a.model):'', sub=a.sub_agent_count&&a.sub_agent_count>0?'<span class="badge">'+a.sub_agent_count+'</span>':'';
-      var modelCol = isAll ? '' : '<td class="dim" style="font-size:12px">'+esc(m)+'</td>';
-      return '<tr><td class="name" title="'+esc(a.name)+'">'+esc(a.name)+sub+'</td><td><span class="dot-s '+s+'"></span><span class="st '+s+'">'+cap1(a.status)+'</span></td>'+modelCol+'<td class="r tok">'+(tok>0?fmtTok(tok):'\u2014')+'</td><td class="r cost">'+(cost>0?'$'+cost.toFixed(2):'\u2014')+'</td></tr>';
+      return '<tr><td class="name" title="'+esc(a.name)+'">'+esc(a.name)+sub+'</td><td><span class="dot-s '+s+'"></span><span class="st '+s+'">'+cap1(a.status)+'</span></td><td class="r cost">'+(cost>0?'$'+cost.toFixed(2):'\u2014')+'</td><td class="r tok hide-narrow">'+(tok>0?fmtTok(tok):'\u2014')+'</td></tr>';
     }).join('');
   }
 
@@ -144,8 +143,13 @@
     if(!f.length){ el.innerHTML='<div class="empty">No activity</div>'; return; }
     el.innerHTML=f.slice(-80).map(function(e){
       var rawTool=e.tool_name||'?', tl=shortTool(rawTool), tc='tool-'+rawTool.toLowerCase(), sm=e.summary||'', dr=e.duration_ms?e.duration_ms+'ms':'', tm=fmtTime(e.timestamp);
-      var ag=''; if(isAll&&e.cwd){var p=e.cwd.split('/');ag=p[p.length-1]||'';}
-      return '<div class="fi"><span class="fi-t">'+esc(tm)+'</span>'+(ag?'<span class="fi-a">'+esc(ag)+'</span>':'')+'<span class="fi-tool '+tc+'">'+esc(tl)+'</span><span class="fi-s">'+esc(trunc(sm,120))+'</span>'+(dr?'<span class="fi-d">'+dr+'</span>':'')+'</div>';
+      // Only show agent column if multiple agents
+      var multiAgent = isAll && f.reduce(function(s,x){s[x.agent_name]=1;return s;},{});
+      var showAgent = isAll && Object.keys(multiAgent||{}).length > 1;
+      var ag=''; if(showAgent&&e.cwd){var p=e.cwd.split('/');ag=p[p.length-1]||'';}
+      // Use summary if available, otherwise show shortened tool name
+      var displaySm = sm || tl;
+      return '<div class="fi"><span class="fi-t">'+esc(tm)+'</span>'+(ag?'<span class="fi-a">'+esc(ag)+'</span>':'')+'<span class="fi-tool '+tc+'">'+esc(tl)+'</span><span class="fi-s">'+esc(trunc(displaySm,120))+'</span>'+(dr?'<span class="fi-d">'+dr+'</span>':'')+'</div>';
     }).join('');
     el.scrollTop=el.scrollHeight;
   }
@@ -198,12 +202,6 @@
     if(S.ch.cost) S.ch.cost.destroy();
     var ctx2=document.getElementById('cost-chart');
     if(ctx2&&d.length) S.ch.cost=new Chart(ctx2,{type:'bar',data:{labels:d.map(function(x){return x.date.slice(5);}),datasets:[{data:d.map(function(x){return Math.round(x.cost_usd*100)/100;}),backgroundColor:dk?'rgba(99,102,241,0.5)':'rgba(99,102,241,0.6)',borderColor:dk?'#6366f1':'#4f46e5',borderWidth:1,borderRadius:2,barPercentage:0.7}]},options:co(gc,function(v){return '$'+v;},true)});
-    // Project
-    if(S.ch.proj) S.ch.proj.destroy();
-    var ctx3=document.getElementById('project-chart'), bp=S.stats.by_project||[];
-    if(ctx3&&bp.length){var tp=bp.slice(0,6),cl=['#6366f1','#8b5cf6','#a78bfa','#3b82f6','#06b6d4','#22c55e'];
-      S.ch.proj=new Chart(ctx3,{type:'bar',data:{labels:tp.map(function(p){return p.label;}),datasets:[{data:tp.map(function(p){return Math.round(p.cost_usd*100)/100;}),backgroundColor:cl.slice(0,tp.length),borderWidth:0,borderRadius:3,barPercentage:0.5}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:function(c){return '$'+c.raw.toFixed(2);}}}},scales:{x:{grid:{color:gc},ticks:{font:{size:10},callback:function(v){return '$'+v;}}},y:{grid:{display:false},ticks:{font:{size:11}}}}}});
-    }
   }
 
   function co(gc,fmt,noLeg){

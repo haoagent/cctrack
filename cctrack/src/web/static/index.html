@@ -40,7 +40,7 @@
         <div class="table-scroll">
           <table>
             <thead><tr>
-              <th>Name</th><th>Status</th><th>Model</th><th class="r">Tokens</th><th class="r">Cost</th>
+              <th>Name</th><th>Status</th><th class="r">Cost</th><th class="r hide-narrow">Tokens</th>
             </tr></thead>
             <tbody id="sessions-body"></tbody>
           </table>
@@ -64,8 +64,8 @@
         </div>
       </section>
 
-      <!-- Charts -->
-      <section class="card chart-card span-2">
+      <!-- Charts: two side by side -->
+      <section class="card chart-card">
         <h2 class="card-title">Token Usage <span class="subtitle">30 days</span></h2>
         <div class="chart-box"><canvas id="token-chart"></canvas></div>
       </section>
@@ -73,11 +73,6 @@
       <section class="card chart-card">
         <h2 class="card-title">Daily Cost</h2>
         <div class="chart-box"><canvas id="cost-chart"></canvas></div>
-      </section>
-
-      <section class="card chart-card">
-        <h2 class="card-title">By Project</h2>
-        <div class="chart-box"><canvas id="project-chart"></canvas></div>
       </section>
 
       <!-- Activity -->
