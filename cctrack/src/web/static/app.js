@@ -41,25 +41,54 @@
     if (!S.snap || !S.snap.teams || !S.snap.teams.length) return;
     if (S.ti >= S.snap.teams.length) S.ti = 0;
     var t = S.snap.teams[S.ti];
+    var isAll = t.name === 'all';
     renderHero(); renderTabs(S.snap.teams); renderSessions(t); renderRight(t); renderFeed();
+    // Charts + cap only on ALL tab
+    document.querySelectorAll('.chart-card').forEach(function(el) { el.style.display = isAll ? '' : 'none'; });
+    var capEl = document.getElementById('cap-inline');
+    if (capEl) capEl.style.display = isAll ? '' : 'none';
   }
 
   function renderHero() {
-    if (S.stats) {
-      $('hero-cost', '$'+S.stats.today.cost_usd.toFixed(2));
-    } else if (S.snap && S.snap.teams && S.snap.teams[S.ti]) {
-      var cost=0;
-      (S.snap.teams[S.ti].agents||[]).forEach(function(a){ if(a.tokens) cost+=ecost(a.tokens); });
-      $('hero-cost', '$'+cost.toFixed(2));
+    var t = S.snap && S.snap.teams && S.snap.teams[S.ti];
+    if (!t) return;
+    var isAll = t.name === 'all';
+
+    if (isAll && S.stats) {
+      // ALL tab: show today from stats (global)
+      $('hero-cost', '$' + S.stats.today.cost_usd.toFixed(2));
+      $('hero-label', 'today');
+    } else {
+      // Session tab: show this session's total cost
+      var cost = 0;
+      (t.agents || []).forEach(function(a) { if (a.tokens) cost += ecost(a.tokens); });
+      $('hero-cost', '$' + cost.toFixed(2));
+      $('hero-label', 'session cost');
     }
+  }
+
+  function tabLabel(name) {
+    // "all" → "ALL"
+    if (name === 'all') return 'ALL';
+    // "session:cctrack: 这个项目..." → extract project name before ":"
+    var n = name.replace(/^session:/, '');
+    // Take just the project part (before first ": ")
+    var colon = n.indexOf(': ');
+    if (colon > 0) n = n.substring(0, colon);
+    // Truncate
+    if (n.length > 16) n = n.substring(0, 14) + '..';
+    return n.toUpperCase();
   }
 
   function renderTabs(teams) {
     var el=document.getElementById('team-tabs');
     el.innerHTML = teams.map(function(t,i){
       var on = (t.agents||[]).some(function(a){return a.status==='Active';});
-      var nm = t.name.replace(/^session:/,'').toUpperCase();
-      return '<button class="tab'+(i===S.ti?' active':'')+'" data-i="'+i+'"><span class="dot '+(on?'on':'off')+'"></span>'+esc(nm)+'</button>';
+      var isAll = i === 0;
+      var nm = tabLabel(t.name);
+      var count = (t.agents||[]).length;
+      var badge = isAll ? '' : '<span class="tab-count">'+count+'</span>';
+      return '<button class="tab'+(i===S.ti?' active':'')+(isAll?' tab-all':'')+'" data-i="'+i+'"><span class="dot '+(on?'on':'off')+'"></span>'+esc(nm)+badge+'</button>';
     }).join('');
     el.querySelectorAll('.tab').forEach(function(b){ b.onclick=function(){ S.ti=parseInt(b.dataset.i,10); render(); if(S.stats){renderCharts();renderCap();} }; });
   }
