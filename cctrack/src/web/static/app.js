@@ -239,7 +239,7 @@
 
   // Helpers
   function ttok(t){return t?(t.input_tokens||0)+(t.output_tokens||0)+(t.cache_read_tokens||0)+(t.cache_create_5m_tokens||0)+(t.cache_create_1h_tokens||0):0;}
-  function ecost(t){if(!t)return 0;if(t.cost_usd&&t.cost_usd>0)return t.cost_usd;return(t.input_tokens||0)/1e6*5+(t.output_tokens||0)/1e6*25+(t.cache_read_tokens||0)/1e6*0.5+(t.cache_create_5m_tokens||0)/1e6*6.25+(t.cache_create_1h_tokens||0)/1e6*10;}
+  function ecost(t){if(!t)return 0;if(t.cost_usd&&t.cost_usd>0)return t.cost_usd;return(t.input_tokens||0)/1e6*3+(t.output_tokens||0)/1e6*15+(t.cache_read_tokens||0)/1e6*0.3+((t.cache_create_5m_tokens||0)+(t.cache_create_1h_tokens||0))/1e6*3.75;}
   function fmtTok(n){if(n>=1e9)return(n/1e9).toFixed(1)+'B';if(n>=1e6)return(n/1e6).toFixed(1)+'M';if(n>=1e3)return(n/1e3).toFixed(0)+'K';return String(n||0);}
   function smodel(m){var l=m.toLowerCase();return l.indexOf('opus')>=0?'opus':l.indexOf('sonnet')>=0?'sonnet':l.indexOf('haiku')>=0?'haiku':m.length>10?m.slice(-8):m;}
   function fmtTime(ts){if(!ts)return'--:--';try{return new Date(ts).toLocaleTimeString('en-US',{hour12:false});}catch(e){return'--:--';}}

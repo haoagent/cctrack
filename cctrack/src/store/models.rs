@@ -198,25 +198,26 @@ impl TokenUsage {
         }
     }
 
-    /// Estimate cost with explicit model name (flat rate fallback).
+    /// Estimate cost with explicit model name.
+    /// Uses tiered pricing + unified cache rate to match ccusage/stats.rs.
     pub fn estimated_cost_for_model(&self, model: Option<&str>) -> f64 {
         if self.cost_usd > 0.0 {
             return self.cost_usd;
         }
-        let (inp_rate, out_rate, cw5m_rate, cw1h_rate, cr_rate) = match model {
+        let (inp, inp_t, out, out_t, cw, cw_t, cr, cr_t) = match model {
             Some(m) if m.to_lowercase().contains("opus") =>
-                (5.0, 25.0, 6.25, 10.0, 0.50),
+                (5.0, 10.0, 25.0, 37.50, 6.25, 12.50, 0.50, 1.00),
             Some(m) if m.to_lowercase().contains("haiku") =>
-                (1.0, 5.0, 1.25, 2.0, 0.10),
-            _ =>
-                (3.0, 15.0, 3.75, 6.0, 0.30),
+                (1.0, 1.0, 5.0, 5.0, 1.25, 1.25, 0.10, 0.10),
+            _ => // Sonnet
+                (3.0, 6.0, 15.0, 22.50, 3.75, 7.50, 0.30, 0.60),
         };
-        let input = self.input_tokens as f64 / 1_000_000.0 * inp_rate;
-        let output = self.output_tokens as f64 / 1_000_000.0 * out_rate;
-        let cw_5m = self.cache_create_5m_tokens as f64 / 1_000_000.0 * cw5m_rate;
-        let cw_1h = self.cache_create_1h_tokens as f64 / 1_000_000.0 * cw1h_rate;
-        let cache_r = self.cache_read_tokens as f64 / 1_000_000.0 * cr_rate;
-        input + output + cw_5m + cw_1h + cache_r
+        // Unified cache_creation (5m + 1h) at single cache_write rate
+        let cache_write_total = self.cache_create_5m_tokens + self.cache_create_1h_tokens;
+        tiered_cost(self.input_tokens, inp, inp_t)
+            + tiered_cost(self.output_tokens, out, out_t)
+            + tiered_cost(cache_write_total, cw, cw_t)
+            + tiered_cost(self.cache_read_tokens, cr, cr_t)
     }
 
     /// Add a single message's tokens and compute its cost with tiered pricing.
