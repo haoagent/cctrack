@@ -220,6 +220,7 @@ impl TokenUsage {
     }
 
     /// Add a single message's tokens and compute its cost with tiered pricing.
+    /// Uses unified cache_creation rate (no separate 1h rate) to match ccusage.
     pub fn add_message(&mut self, model: Option<&str>,
         input: u64, output: u64, cache_read: u64, cache_write_5m: u64, cache_write_1h: u64,
     ) {
@@ -229,19 +230,21 @@ impl TokenUsage {
         self.cache_create_5m_tokens += cache_write_5m;
         self.cache_create_1h_tokens += cache_write_1h;
 
-        let (inp, inp_t, out, out_t, cw, cw_t, cw1h, cr, cr_t) = match model {
+        // Unified cache_creation = 5m + 1h, priced at single cache_write rate
+        let cache_write_total = cache_write_5m + cache_write_1h;
+
+        let (inp, inp_t, out, out_t, cw, cw_t, cr, cr_t) = match model {
             Some(m) if m.to_lowercase().contains("opus") =>
-                (5.0, 10.0, 25.0, 37.50, 6.25, 12.50, 10.0, 0.50, 1.00),
+                (5.0, 10.0, 25.0, 37.50, 6.25, 12.50, 0.50, 1.00),
             Some(m) if m.to_lowercase().contains("haiku") =>
-                (1.0, 1.0, 5.0, 5.0, 1.25, 1.25, 2.0, 0.10, 0.10),
-            _ =>
-                (3.0, 3.0, 15.0, 15.0, 3.75, 3.75, 6.0, 0.30, 0.30),
+                (1.0, 1.0, 5.0, 5.0, 1.25, 1.25, 0.10, 0.10),
+            _ => // Sonnet
+                (3.0, 6.0, 15.0, 22.50, 3.75, 7.50, 0.30, 0.60),
         };
 
         self.cost_usd += tiered_cost(input, inp, inp_t)
             + tiered_cost(output, out, out_t)
-            + tiered_cost(cache_write_5m, cw, cw_t)
-            + cache_write_1h as f64 / 1_000_000.0 * cw1h
+            + tiered_cost(cache_write_total, cw, cw_t)
             + tiered_cost(cache_read, cr, cr_t);
     }
 }

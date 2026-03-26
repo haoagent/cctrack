@@ -3,48 +3,50 @@
 //! Scans `~/.claude/projects/` for .jsonl transcripts, sums token usage,
 //! and groups by time period and project.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
-use std::time::SystemTime;
 
-use chrono::{NaiveDate, Utc, Datelike};
+use chrono::{NaiveDate, Utc, Local, Datelike, DateTime};
 use serde::Serialize;
 
 /// Per-model pricing ($/MTok) — Anthropic API March 2026
 /// Source: https://platform.claude.com/docs/en/about-claude/pricing
 /// Tiered: tokens above 200k per-message are charged at higher rates.
-struct ModelPricing {
-    input: f64,
-    output: f64,
-    cache_write: f64,     // cache_creation (flat, or 5m ephemeral)
-    cache_write_1h: f64,  // 2x input (ephemeral 1-hour)
-    cache_read: f64,      // 0.1x input
+pub struct ModelPricing {
+    pub input: f64,
+    pub output: f64,
+    pub cache_write: f64,     // cache_creation (flat, or 5m ephemeral)
+    pub cache_write_1h: f64,  // 2x input (ephemeral 1-hour)
+    pub cache_read: f64,      // 0.1x input
     // Tiered rates for tokens above 200k per-message
-    input_above_200k: f64,
-    output_above_200k: f64,
-    cache_write_above_200k: f64,
-    cache_read_above_200k: f64,
+    pub input_above_200k: f64,
+    pub output_above_200k: f64,
+    pub cache_write_above_200k: f64,
+    pub cache_read_above_200k: f64,
 }
 
-/// Threshold for tiered pricing (per-message).
+/// Tiered pricing threshold (200K tokens in context window).
+/// Note: tiered rates stored for reference / pricing-check, but NOT applied in
+/// cost calculation because Claude Code Pro/Max sessions rarely exceed 200K
+/// prompt tokens per API call, and ccusage (market standard) uses flat rates.
 const TIERED_THRESHOLD: u64 = 200_000;
 
-fn get_pricing(model: &str) -> ModelPricing {
+pub fn get_pricing(model: &str) -> ModelPricing {
     let m = model.to_lowercase();
     if m.contains("opus") {
-        // Opus 4.5/4.6: $5/$25, above 200k: $10/$37.50
+        // Opus 4.6: $5/$25, cache $6.25/$0.50
         ModelPricing {
             input: 5.0, output: 25.0, cache_write: 6.25, cache_write_1h: 10.0, cache_read: 0.50,
             input_above_200k: 10.0, output_above_200k: 37.50, cache_write_above_200k: 12.50, cache_read_above_200k: 1.00,
         }
     } else if m.contains("sonnet") {
-        // Sonnet 4.5/4.6: $3/$15 (no tiered pricing)
+        // Sonnet 4.6: $3/$15, cache $3.75/$0.30
         ModelPricing {
             input: 3.0, output: 15.0, cache_write: 3.75, cache_write_1h: 6.0, cache_read: 0.30,
-            input_above_200k: 3.0, output_above_200k: 15.0, cache_write_above_200k: 3.75, cache_read_above_200k: 0.30,
+            input_above_200k: 6.0, output_above_200k: 22.50, cache_write_above_200k: 7.50, cache_read_above_200k: 0.60,
         }
     } else if m.contains("haiku") {
-        // Haiku 4.5: $1/$5 (no tiered pricing)
+        // Haiku 4.5: $1/$5, cache $1.25/$0.10
         ModelPricing {
             input: 1.0, output: 5.0, cache_write: 1.25, cache_write_1h: 2.0, cache_read: 0.10,
             input_above_200k: 1.0, output_above_200k: 5.0, cache_write_above_200k: 1.25, cache_read_above_200k: 0.10,
@@ -53,7 +55,7 @@ fn get_pricing(model: &str) -> ModelPricing {
         // Default to Sonnet pricing
         ModelPricing {
             input: 3.0, output: 15.0, cache_write: 3.75, cache_write_1h: 6.0, cache_read: 0.30,
-            input_above_200k: 3.0, output_above_200k: 15.0, cache_write_above_200k: 3.75, cache_read_above_200k: 0.30,
+            input_above_200k: 6.0, output_above_200k: 22.50, cache_write_above_200k: 7.50, cache_read_above_200k: 0.60,
         }
     }
 }
@@ -102,13 +104,15 @@ struct MessageTokens {
 
 impl MessageTokens {
     /// Compute cost for this single message using tiered pricing.
+    /// Matches ccusage: tiered at 200K threshold, cache_creation uses
+    /// single cache_write rate (no separate 1h rate).
     fn cost(&self, pricing: &ModelPricing) -> f64 {
         let input = tiered_cost(self.input, pricing.input, pricing.input_above_200k);
         let output = tiered_cost(self.output, pricing.output, pricing.output_above_200k);
         let cw = tiered_cost(self.cache_write, pricing.cache_write, pricing.cache_write_above_200k);
-        let cw_1h = self.cache_write_1h as f64 / 1_000_000.0 * pricing.cache_write_1h;
         let cr = tiered_cost(self.cache_read, pricing.cache_read, pricing.cache_read_above_200k);
-        input + output + cw + cw_1h + cr
+        // cache_write_1h is always 0 since we use top-level cache_creation_input_tokens
+        input + output + cw + cr
     }
 }
 
@@ -206,12 +210,14 @@ pub fn compute_stats(claude_home: &Path) -> StatsReport {
         return StatsReport::default();
     }
 
-    let now = Utc::now();
+    let now = Local::now();
     let today = now.date_naive();
     let week_start = today - chrono::Duration::days(today.weekday().num_days_from_monday() as i64);
     let month_start = NaiveDate::from_ymd_opt(today.year(), today.month(), 1).unwrap_or(today);
 
     let mut sessions: Vec<SessionUsage> = Vec::new();
+    // Global dedup: messageId:requestId → skip duplicates across parent + subagent files
+    let mut seen_hashes: HashSet<String> = HashSet::new();
 
     // Scan all project directories
     let project_dirs = match std::fs::read_dir(&projects_dir) {
@@ -227,20 +233,11 @@ pub fn compute_stats(claude_home: &Path) -> StatsReport {
 
         let project_name = project_dir_to_name(&project_path);
 
-        // Scan .jsonl files in project dir
-        let jsonl_files = match std::fs::read_dir(&project_path) {
-            Ok(entries) => entries,
-            Err(_) => continue,
-        };
+        // Recursively scan .jsonl files in project dir (including subagents/)
+        let jsonl_files = collect_jsonl_files(&project_path);
 
-        for file_entry in jsonl_files.flatten() {
-            let file_path = file_entry.path();
-            if file_path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
-                continue;
-            }
-
-            // Include all transcripts (including in-progress ones)
-            let usages = parse_transcript(&file_path, &project_name);
+        for file_path in jsonl_files {
+            let usages = parse_transcript(&file_path, &project_name, &mut seen_hashes);
             sessions.extend(usages);
         }
     }
@@ -320,24 +317,23 @@ fn compute_cap_windows(projects_dir: &Path, plan: &crate::config::PlanConfig) ->
     // Collect all (timestamp, output_tokens) from recent transcripts
     let mut events: Vec<(chrono::DateTime<Utc>, u64)> = Vec::new();
 
+    let mut seen_hashes: HashSet<String> = HashSet::new();
+
     if let Ok(project_dirs) = std::fs::read_dir(projects_dir) {
         for project_entry in project_dirs.flatten() {
             let project_path = project_entry.path();
             if !project_path.is_dir() { continue; }
-            if let Ok(files) = std::fs::read_dir(&project_path) {
-                for file_entry in files.flatten() {
-                    let file_path = file_entry.path();
-                    if file_path.extension().and_then(|e| e.to_str()) != Some("jsonl") { continue; }
-                    // Only scan recent files (modified within 48h)
-                    if let Ok(meta) = file_path.metadata() {
-                        if let Ok(modified) = meta.modified() {
-                            if modified.elapsed().map(|d| d.as_secs() > 48 * 3600).unwrap_or(true) {
-                                continue;
-                            }
+            // Recursively scan all .jsonl files (including subagents/)
+            for file_path in collect_jsonl_files(&project_path) {
+                // Only scan recent files (modified within 48h)
+                if let Ok(meta) = file_path.metadata() {
+                    if let Ok(modified) = meta.modified() {
+                        if modified.elapsed().map(|d| d.as_secs() > 48 * 3600).unwrap_or(true) {
+                            continue;
                         }
                     }
-                    collect_output_events(&file_path, &cutoff, &mut events);
                 }
+                collect_output_events(&file_path, &cutoff, &mut events, &mut seen_hashes);
             }
         }
     }
@@ -415,6 +411,7 @@ fn collect_output_events(
     path: &Path,
     cutoff: &chrono::DateTime<Utc>,
     events: &mut Vec<(chrono::DateTime<Utc>, u64)>,
+    seen_hashes: &mut HashSet<String>,
 ) {
     let content = match std::fs::read_to_string(path) {
         Ok(c) => c,
@@ -424,8 +421,20 @@ fn collect_output_events(
     for line in content.lines() {
         if !line.contains("\"output_tokens\"") { continue; }
         if let Ok(val) = serde_json::from_str::<serde_json::Value>(line) {
+            // Dedup by messageId:requestId
+            let msg_obj = val.get("message");
+            if let (Some(mid), Some(rid)) = (
+                msg_obj.and_then(|m| m.get("id")).and_then(|v| v.as_str()),
+                val.get("requestId").or_else(|| val.get("request_id")).and_then(|v| v.as_str()),
+            ) {
+                let hash = format!("{}:{}", mid, rid);
+                if !seen_hashes.insert(hash) {
+                    continue; // duplicate
+                }
+            }
+
             let ts_str = val.get("timestamp").and_then(|v| v.as_str());
-            let output = val.get("message")
+            let output = msg_obj
                 .and_then(|m| m.get("usage"))
                 .and_then(|u| u.get("output_tokens"))
                 .and_then(|v| v.as_u64())
@@ -443,10 +452,27 @@ fn collect_output_events(
     }
 }
 
+/// Recursively collect all .jsonl files under a directory (including subagents/).
+fn collect_jsonl_files(dir: &Path) -> Vec<std::path::PathBuf> {
+    let mut files = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                files.extend(collect_jsonl_files(&path));
+            } else if path.extension().and_then(|e| e.to_str()) == Some("jsonl") {
+                files.push(path);
+            }
+        }
+    }
+    files
+}
+
 /// Parse a single transcript .jsonl file for usage data.
 /// Returns multiple SessionUsage entries — one per day the session was active.
 /// Cost is computed per-message with tiered pricing, then accumulated per-day.
-fn parse_transcript(path: &Path, project_name: &str) -> Vec<SessionUsage> {
+/// Uses `seen_hashes` for messageId:requestId dedup across files (parent + subagent).
+fn parse_transcript(path: &Path, project_name: &str, seen_hashes: &mut HashSet<String>) -> Vec<SessionUsage> {
     let content = match std::fs::read_to_string(path) {
         Ok(c) => c,
         Err(_) => return Vec::new(),
@@ -467,27 +493,43 @@ fn parse_transcript(path: &Path, project_name: &str) -> Vec<SessionUsage> {
                 model = m.to_string();
             }
 
-            // Extract timestamp for this message → determine which day
+            // Dedup: skip if we've already seen this messageId:requestId
+            let msg_obj = val.get("message");
+            if let (Some(mid), Some(rid)) = (
+                msg_obj.and_then(|m| m.get("id")).and_then(|v| v.as_str()),
+                val.get("requestId").or_else(|| val.get("request_id")).and_then(|v| v.as_str()),
+            ) {
+                let hash = format!("{}:{}", mid, rid);
+                if !seen_hashes.insert(hash) {
+                    continue; // duplicate — already counted from another file
+                }
+            }
+
+            // Extract timestamp → convert to local timezone for day bucketing
             let msg_date = val.get("timestamp")
                 .and_then(|v| v.as_str())
-                .and_then(|ts| if ts.len() >= 10 { NaiveDate::parse_from_str(&ts[..10], "%Y-%m-%d").ok() } else { None });
+                .and_then(|ts| {
+                    // Parse RFC3339 (e.g. "2026-03-12T16:30:00.000Z") → local date
+                    DateTime::parse_from_rfc3339(ts).ok()
+                        .map(|dt| dt.with_timezone(&Local).date_naive())
+                        .or_else(|| {
+                            // Fallback: just take first 10 chars as date
+                            if ts.len() >= 10 { NaiveDate::parse_from_str(&ts[..10], "%Y-%m-%d").ok() } else { None }
+                        })
+                });
 
             if let Some(u) = val.get("message").and_then(|m| m.get("usage")) {
-                let date = msg_date.unwrap_or_else(|| Utc::now().date_naive());
+                let date = msg_date.unwrap_or_else(|| Local::now().date_naive());
 
                 // Extract per-message token counts
                 let input = u.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
                 let output = u.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
                 let cache_read = u.get("cache_read_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
 
-                let (cache_write, cache_write_1h) = if let Some(cc) = u.get("cache_creation") {
-                    (
-                        cc.get("ephemeral_5m_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0),
-                        cc.get("ephemeral_1h_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0),
-                    )
-                } else {
-                    (u.get("cache_creation_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0), 0)
-                };
+                // Use top-level cache_creation_input_tokens (includes both 5m and 1h).
+                // Matches ccusage behavior: single cache_creation rate for all cache writes.
+                let cache_write = u.get("cache_creation_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                let cache_write_1h: u64 = 0;
 
                 // Compute per-message cost with tiered pricing
                 let msg = MessageTokens { input, output, cache_read, cache_write, cache_write_1h };

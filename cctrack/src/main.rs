@@ -1,6 +1,7 @@
 use clap::Parser;
 
 use cctrack::{collector, config::Config, stats, store, tui, web};
+mod pricing_check;
 use store::event::StoreSnapshot;
 
 #[derive(Parser)]
@@ -39,6 +40,8 @@ enum Commands {
     },
     /// Show usage statistics (tokens, cost) from all sessions
     Stats,
+    /// Check if hardcoded pricing is up-to-date vs LiteLLM
+    PricingCheck,
 }
 
 #[derive(clap::Subcommand)]
@@ -65,6 +68,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let claude_home = Config::claude_home();
             let report = stats::compute_stats(&claude_home);
             stats::print_stats(&report);
+            return Ok(());
+        }
+        Some(Commands::PricingCheck) => {
+            pricing_check::run().await?;
             return Ok(());
         }
         Some(Commands::Hooks { action }) => {
