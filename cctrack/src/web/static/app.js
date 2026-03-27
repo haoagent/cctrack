@@ -2,7 +2,7 @@
 (function () {
   'use strict';
 
-  var S = { snap: null, stats: null, ti: 0, tab: 'activity',
+  var S = { snap: null, stats: null, ti: 0, tab: 'activity', range: 30,
     theme: localStorage.getItem('cctrack-theme') || 'light',
     ch: { tok: null, cost: null, proj: null } };
 
@@ -34,6 +34,11 @@
   // Panel tabs
   document.querySelectorAll('.ptab').forEach(function(b){
     b.onclick = function(){ document.querySelectorAll('.ptab').forEach(function(x){x.classList.remove('active');}); b.classList.add('active'); S.tab=b.dataset.tab; renderFeed(); };
+  });
+
+  // Chart range
+  document.querySelectorAll('.range-btn').forEach(function(b){
+    b.onclick = function(){ document.querySelectorAll('.range-btn').forEach(function(x){x.classList.remove('active');}); b.classList.add('active'); S.range=parseInt(b.dataset.range,10); renderCharts(); };
   });
 
   // ─── Render ───
@@ -266,7 +271,9 @@
     if(!S.stats) return;
     var dk=S.theme==='dark', tc=dk?'#52525b':'#a1a1aa', gc=dk?'rgba(255,255,255,0.04)':'rgba(0,0,0,0.04)';
     Chart.defaults.color=tc; Chart.defaults.borderColor=gc;
-    var d=S.stats.daily||[];
+    var allD=S.stats.daily||[];
+    var d=S.range>0?allD.slice(-S.range):allD;
+    var rangeLabel=S.range>0?S.range+'d':'all';
     // Token — stacked bar with distinct colors
     if(S.ch.tok) S.ch.tok.destroy();
     var ctx=document.getElementById('token-chart');
@@ -275,7 +282,9 @@
     d.forEach(function(x){totalCache+=(x.cache_tokens||0);totalInput+=(x.input_tokens||0)+(x.cache_tokens||0)+(x.cache_write_tokens||0);});
     var hitRate=totalInput>0?Math.round(totalCache/totalInput*100):0;
     var titleEl=document.getElementById('token-chart-title');
-    if(titleEl)titleEl.innerHTML='Token Usage <span class="subtitle">30d</span> <span class="subtitle" style="margin-left:8px">Cache Hit '+hitRate+'%</span>';
+    if(titleEl)titleEl.innerHTML='Token Usage <span class="subtitle">'+rangeLabel+'</span> <span class="subtitle" style="margin-left:8px">Cache Hit '+hitRate+'%</span>';
+    var costTitle=document.getElementById('cost-chart-title');
+    if(costTitle)costTitle.innerHTML='Daily Cost <span class="subtitle">'+rangeLabel+'</span>';
     if(ctx&&d.length) S.ch.tok=new Chart(ctx,{type:'bar',data:{labels:d.map(function(x){return x.date.slice(5);}),datasets:[
       {label:'Cache Read',data:d.map(function(x){return x.cache_tokens||0;}),backgroundColor:dk?'rgba(193,95,60,0.06)':'rgba(193,95,60,0.05)',borderColor:dk?'rgba(193,95,60,0.4)':'rgba(193,95,60,0.3)',borderWidth:1,borderDash:[3,3],borderRadius:2,order:3},
       {label:'Input',data:d.map(function(x){return x.input_tokens||0;}),backgroundColor:dk?'rgba(193,95,60,0.25)':'rgba(193,95,60,0.2)',borderRadius:2,order:2},

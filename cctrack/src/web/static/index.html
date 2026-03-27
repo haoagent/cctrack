@@ -65,6 +65,13 @@
         </div>
       </section>
 
+      <!-- Chart range selector -->
+      <div class="span-full chart-range">
+        <button class="range-btn" data-range="7">7d</button>
+        <button class="range-btn active" data-range="30">30d</button>
+        <button class="range-btn" data-range="0">All</button>
+      </div>
+
       <!-- Charts: two side by side -->
       <section class="card chart-card">
         <h2 class="card-title" id="token-chart-title">Token Usage <span class="subtitle">30d</span></h2>
@@ -72,7 +79,7 @@
       </section>
 
       <section class="card chart-card">
-        <h2 class="card-title">Daily Cost</h2>
+        <h2 class="card-title" id="cost-chart-title">Daily Cost</h2>
         <div class="chart-box"><canvas id="cost-chart"></canvas></div>
       </section>
 
