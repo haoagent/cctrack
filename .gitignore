@@ -6,6 +6,7 @@ CHANGELOG-*.md
 docs/
 *.log
 .DS_Store
-.claude/
+.claude/launch.json
+.claude/settings.*
 assets/fake-*.html
 assets/web-420.png
