@@ -56,7 +56,7 @@ Sessions with sub-agents get their own tab. Tabs appear when agents spawn and di
 - **📋 Cost Breakdown** — by session, by agent, by project. Know exactly where every dollar went
 - **🖥️ Web + TUI** — browser dashboard (SSE) or lightweight terminal UI
 - **🔒 Local-Only** — all computation on your machine. No telemetry, no cloud
-- **🦀 Tiny Footprint** — single Rust binary, ~3MB, <10MB RAM
+- **🦀 Tiny Footprint** — 5,500 lines of Rust, ~3MB binary, <10MB RAM
 
 ## Usage
 
