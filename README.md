@@ -12,8 +12,8 @@
 [![Claude Code](https://img.shields.io/badge/Claude_Code-cc5500?logo=anthropic&logoColor=white)](https://docs.anthropic.com/en/docs/claude-code)
 
 <table><tr>
-<td><img src="assets/web-top.png" width="480" /><br><em>Web Dashboard</em></td>
-<td><img src="assets/tui.png" width="480" /><br><em>Terminal UI</em></td>
+<td><img src="../assets/web-top.png" width="480" /><br><em>Web Dashboard</em></td>
+<td><img src="../assets/tui.png" width="480" /><br><em>Terminal UI</em></td>
 </tr></table>
 
 </div>
@@ -53,7 +53,7 @@ Sessions with sub-agents get their own tab. Tabs appear when agents spawn and di
 - **📋 Cost Breakdown** — by session, by agent, by project. Know exactly where every dollar went
 - **🖥️ Web + TUI** — browser dashboard (SSE) or lightweight terminal UI
 - **🔒 Local-Only** — all computation on your machine. No telemetry, no cloud
-- **🦀 Tiny Footprint** — 5,500 lines of Rust, ~3MB binary, <10MB RAM
+- **🦀 Tiny Footprint** — 292KB source, 5,500 lines of Rust, ~3MB binary, <10MB RAM
 
 ## Usage
 
