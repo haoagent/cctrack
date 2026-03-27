@@ -6,11 +6,18 @@
 
 > A tiny Rust daemon that watches your agents work. Always on, <10MB RAM.
 
+[![GitHub stars](https://img.shields.io/github/stars/haoagent/cctrack?style=flat)](https://github.com/haoagent/cctrack)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Rust](https://img.shields.io/badge/Rust-000000?logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-cc5500?logo=anthropic&logoColor=white)](https://docs.anthropic.com/en/docs/claude-code)
 
 <img src="assets/web-top.png" width="720" />
+
+*Web Dashboard*
+
+<img src="assets/tui.png" width="720" />
+
+*Terminal UI*
 
 </div>
 
@@ -45,22 +52,6 @@ Open **http://localhost:7891** in your browser. Use Claude Code normally — cct
 - **🔒 Local-Only** — all computation on your machine. No telemetry, no cloud
 - **🦀 Tiny Footprint** — single Rust binary, ~3MB, <10MB RAM
 
-## Connect to Claude
-
-To see your real quota usage (5h / 7d bars), cctrack reads your Claude Code OAuth token from the macOS Keychain. Just make sure you're logged in:
-
-```bash
-claude /login    # if not already logged in
-```
-
-Then click **"Connect to Claude for quota"** in the web dashboard, or cctrack will auto-detect it on page load. The token is read locally from your Keychain — nothing is sent anywhere except Anthropic's own usage API (`api.anthropic.com`).
-
-> **Note:** If the token has expired, run any Claude Code command (or `claude /login`) to refresh it, then click **Retry** in the dashboard.
-
-## Acknowledgments
-
-Inspired by [ccusage](https://github.com/ryoppippi/ccusage) by [@ryoppippi](https://github.com/ryoppippi) — the excellent Claude Code cost analyzer. cctrack builds on the same concept, reimagined in Rust as an always-on daemon: real-time monitoring, live sessions, quota bars, activity feed, and a web dashboard. Runs in the background at <10MB RAM.
-
 ## Usage
 
 ```bash
@@ -79,8 +70,6 @@ cctrack hooks uninstall     # remove hook
 ```
 
 ## TUI
-
-![cctrack TUI](assets/tui.png)
 
 | Symbol | Color | Status |
 |--------|-------|--------|
@@ -124,6 +113,20 @@ You ──→ Claude Code ──→ transcripts (~/.claude/projects/)
 ## Tech
 
 Single Rust binary. Ratatui (TUI) + Axum (web + SSE) + Chart.js (CDN). tokio async.
+
+## Connect to Claude
+
+To see real quota usage (5h / 7d bars), make sure you're logged in to Claude Code:
+
+```bash
+claude /login
+```
+
+cctrack reads your OAuth token from the macOS Keychain and calls Anthropic's usage API locally. Click **"Connect to Claude for quota"** in the web dashboard, or it auto-detects on page load.
+
+## Acknowledgments
+
+Inspired by [ccusage](https://github.com/ryoppippi/ccusage) by [@ryoppippi](https://github.com/ryoppippi) — the excellent Claude Code cost analyzer. cctrack builds on the same concept, reimagined in Rust as an always-on daemon.
 
 ## Contributing
 
