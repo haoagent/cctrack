@@ -2,9 +2,9 @@
 
 # cctrack
 
-**Real-time cost & activity dashboard for Claude Code**
+**Real-time usage & activity dashboard for Claude Code**
 
-> Know exactly where your Claude Code dollars go — while they're going.
+> See how hard your Claude Code subscription is working for you.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Rust](https://img.shields.io/badge/Rust-000000?logo=rust&logoColor=white)](https://www.rust-lang.org/)
@@ -12,7 +12,7 @@
 
 <img src="assets/web-top.png" width="720" />
 
-*I spent $200 on Claude last week. $140 of it was one runaway agent I didn't notice until I got rate-limited. So I built this.*
+*I pay $200/month for Max plan. One day I burned through $420 worth of API-equivalent tokens before getting rate-limited — and had no idea until it happened. So I built this.*
 
 </div>
 
@@ -35,7 +35,7 @@ Use Claude Code normally. cctrack picks up everything automatically.
 
 ## Features
 
-- **💰 Live Cost** — `$420.69 today` front and center, updated in real-time
+- **💰 Live Usage** — `$420.69 today` in API-equivalent cost — see how much value you're extracting from your subscription
 - **📊 Sessions** — every active session with status, model (opus/sonnet/haiku), and running cost
 - **📈 Charts** — 30 days of token usage (stacked: output, input, cache) and daily cost with 7d/30d/All selector
 - **🎯 Cache Hit Rate** — see if caching is actually working (spoiler: 97%)
