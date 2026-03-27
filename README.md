@@ -11,10 +11,13 @@
 [![Rust](https://img.shields.io/badge/Rust-000000?logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-cc5500?logo=anthropic&logoColor=white)](https://docs.anthropic.com/en/docs/claude-code)
 
-<table><tr>
-<td valign="top"><img src="assets/web-top.png" width="480" /><br><em>Web Dashboard</em></td>
-<td valign="top"><img src="assets/tui.png" width="480" /><br><em>Terminal UI</em></td>
-</tr></table>
+<img src="assets/web-top.png" width="720" />
+
+*Web Dashboard*
+
+<img src="assets/tui.png" width="720" />
+
+*Terminal UI*
 
 </div>
 
