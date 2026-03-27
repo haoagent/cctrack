@@ -6,3 +6,6 @@ CHANGELOG-*.md
 docs/
 *.log
 .DS_Store
+.claude/
+assets/fake-*.html
+assets/web-420.png
