@@ -31,7 +31,7 @@ Use Claude Code normally. cctrack picks up everything automatically.
 
 ## What You Get
 
-**`$421.80 today`** — one number, front and center. Updated in real-time.
+**`$420.69 today`** — one number, front and center. Updated in real-time.
 
 **Sessions (3/5)** — every active session with status, model (opus/sonnet/haiku), and running cost. See which session is burning money right now.
 
