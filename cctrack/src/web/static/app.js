@@ -211,6 +211,8 @@
     e.preventDefault();
     fetchCap();
   };
+  // Auto-try on load
+  fetchCap();
 
   function renderCap() {
     var el = document.getElementById('cap-inline');
@@ -218,9 +220,9 @@
       if (capData && capData.error) {
         var msg = capData.error;
         if (msg.indexOf('expired') >= 0 || msg.indexOf('Refresh') >= 0 || msg.indexOf('error sending') >= 0 || msg.indexOf('401') >= 0) {
-          msg = 'Token expired \u2014 run any Claude Code command to refresh, then retry';
+          msg = 'Run claude /login to refresh token';
         } else if (msg.indexOf('No Claude Code') >= 0) {
-          msg = 'Not logged in \u2014 run claude to login first';
+          msg = 'Run claude /login first';
         }
         el.innerHTML = '<span class="cap-err">' + esc(msg) + '</span> <a href="#" class="cap-retry" id="cap-retry-btn">Retry</a>';
         var rb = document.getElementById('cap-retry-btn');
