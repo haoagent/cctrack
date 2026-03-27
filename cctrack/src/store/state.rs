@@ -280,10 +280,22 @@ impl TeamState {
             .and_then(|f| f.to_str())
             .unwrap_or("");
 
-        let new_name = if cwd_name.is_empty() || title.starts_with(cwd_name) {
+        // If cwd_name is empty, derive project name from transcript path
+        let effective_cwd = if cwd_name.is_empty() {
+            std::path::Path::new(tp.as_str())
+                .parent()
+                .and_then(|d| d.file_name())
+                .and_then(|f| f.to_str())
+                .and_then(|s| s.rsplit('-').next())
+                .unwrap_or("")
+        } else {
+            cwd_name
+        };
+
+        let new_name = if effective_cwd.is_empty() || title.starts_with(effective_cwd) {
             title
         } else {
-            format!("{}: {}", cwd_name, title)
+            format!("{}: {}", effective_cwd, title)
         };
 
         // Update lead agent name
@@ -614,10 +626,23 @@ impl Store {
                 let has_title = if !is_subagent && !agent.name.contains(": ") && looks_like_fallback {
                     if let Some(ref tp) = ps.transcript_path {
                         if let Some(title) = crate::collector::hook_server::read_session_title(tp) {
-                            let new_name = if cwd_name.is_empty() || title.starts_with(&cwd_name) {
+                            // If cwd_name is empty, try deriving project name from transcript path
+                            // e.g. .../-Users-jerry-Documents-ReAgent3/session.jsonl → ReAgent3
+                            let effective_cwd = if cwd_name.is_empty() {
+                                std::path::Path::new(tp.as_str())
+                                    .parent()
+                                    .and_then(|d| d.file_name())
+                                    .and_then(|f| f.to_str())
+                                    .and_then(|s| s.rsplit('-').next())
+                                    .unwrap_or("")
+                                    .to_string()
+                            } else {
+                                cwd_name.clone()
+                            };
+                            let new_name = if effective_cwd.is_empty() || title.starts_with(&effective_cwd) {
                                 title
                             } else {
-                                format!("{}: {}", cwd_name, title)
+                                format!("{}: {}", effective_cwd, title)
                             };
                             agent.name = new_name;
                             true
