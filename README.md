@@ -40,7 +40,7 @@ Open **http://localhost:7891** in your browser. Use Claude Code normally — cct
 
 ## Features
 
-- **💰 Live Cost** — `$420.69 today` updated in real-time as agents work
+- **💰 Live Cost** — real-time cost tracking, updated as agents work
 - **📊 Sessions** — every active session with status, model (opus/sonnet/haiku), and running cost
 - **📈 Charts** — 30 days of token usage (stacked: output, input, cache) and daily cost with 7d/30d/All selector
 - **🎯 Cache Hit Rate** — see if caching is actually working (spoiler: 97%)
