@@ -216,7 +216,15 @@
     var el = document.getElementById('cap-inline');
     if (!capData || !capData.ok) {
       if (capData && capData.error) {
-        el.innerHTML = '<span class="cap-err">' + esc(capData.error) + '</span>';
+        var msg = capData.error;
+        if (msg.indexOf('expired') >= 0 || msg.indexOf('Refresh') >= 0 || msg.indexOf('error sending') >= 0 || msg.indexOf('401') >= 0) {
+          msg = 'Token expired \u2014 run any Claude Code command to refresh, then retry';
+        } else if (msg.indexOf('No Claude Code') >= 0) {
+          msg = 'Not logged in \u2014 run claude to login first';
+        }
+        el.innerHTML = '<span class="cap-err">' + esc(msg) + '</span> <a href="#" class="cap-retry" id="cap-retry-btn">Retry</a>';
+        var rb = document.getElementById('cap-retry-btn');
+        if (rb) rb.onclick = function(e) { e.preventDefault(); fetchCap(); };
       }
       return;
     }
