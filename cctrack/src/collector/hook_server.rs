@@ -290,18 +290,43 @@ pub fn read_session_title(path: &str) -> Option<String> {
     let file = std::fs::File::open(path).ok()?;
     let reader = std::io::BufReader::new(file);
     use std::io::BufRead;
-    for line in reader.lines().take(30) {
+    for line in reader.lines().take(50) {
         let line = match line {
             Ok(l) => l,
             Err(_) => continue,
         };
         if let Ok(val) = serde_json::from_str::<serde_json::Value>(&line) {
-            if val.get("type").and_then(|v| v.as_str()) == Some("queue-operation") {
+            let msg_type = val.get("type").and_then(|v| v.as_str()).unwrap_or("");
+            // Try queue-operation first (older format)
+            if msg_type == "queue-operation" {
                 if let Some(content) = val.get("content").and_then(|v| v.as_str()) {
                     if let Some(title) = clean_session_title(content) {
                         return Some(title);
                     }
-                    // Keep trying other queue-operation entries
+                }
+            }
+            // Also try user messages (newer format)
+            if msg_type == "user" {
+                if let Some(msg) = val.get("message") {
+                    // message.content can be string or array
+                    let text = msg.get("content").and_then(|c| {
+                        if let Some(s) = c.as_str() { return Some(s.to_string()); }
+                        if let Some(arr) = c.as_array() {
+                            for item in arr {
+                                if item.get("type").and_then(|t| t.as_str()) == Some("text") {
+                                    if let Some(t) = item.get("text").and_then(|t| t.as_str()) {
+                                        return Some(t.to_string());
+                                    }
+                                }
+                            }
+                        }
+                        None
+                    });
+                    if let Some(text) = text {
+                        if let Some(title) = clean_session_title(&text) {
+                            return Some(title);
+                        }
+                    }
                 }
             }
         }

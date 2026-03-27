@@ -117,6 +117,8 @@ You ──→ Claude Code ──→ transcripts (~/.claude/projects/)
 
 Single Rust binary. Ratatui (TUI) + Axum (web + SSE) + Chart.js (CDN). tokio async.
 
+This entire project was vibe-coded with Claude Code.
+
 ## Connect to Claude
 
 To see real quota usage (5h / 7d bars), make sure you're logged in to Claude Code:
