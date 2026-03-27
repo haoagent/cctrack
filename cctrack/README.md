@@ -131,11 +131,13 @@ cctrack reads your OAuth token from the macOS Keychain and calls Anthropic's usa
 
 ## Claude Code Skill
 
-A ready-made skill file is included in [`skills/claude-code-track.md`](skills/claude-code-track.md). Copy it to your project's `.claude/skills/` directory to let Claude Code start cctrack for you:
+Install via [skills.sh](https://skills.sh/haoagent/cctrack/claude-code-track):
 
 ```bash
-cp skills/claude-code-track.md .claude/skills/
+npx skills add haoagent/cctrack
 ```
+
+Or manually copy [`skills/claude-code-track/SKILL.md`](../skills/claude-code-track/SKILL.md) to your project's `.claude/skills/` directory.
 
 Then just say "track cost" or "monitor sessions" in Claude Code.
 
