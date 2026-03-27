@@ -1,12 +1,6 @@
 ---
 name: claude-code-track
-description: Start real-time cost & activity monitoring for Claude Code sessions
-triggers:
-  - monitor sessions
-  - track cost
-  - track usage
-  - cctrack
-  - show dashboard
+description: Start real-time cost and activity monitoring for Claude Code sessions. Use when the user wants to track costs, monitor agent sessions, view token usage, or launch the cctrack dashboard.
 ---
 
 # Claude Code Track — Real-time Session Monitor
