@@ -38,6 +38,8 @@ cctrack --web            # starts TUI + web dashboard
 
 Open **http://localhost:7891** in your browser. Use Claude Code normally — cctrack picks up everything automatically.
 
+Each Claude Code session gets its own tab. Run multiple sessions across projects and monitor them all at once.
+
 ## Features
 
 - **💰 Live Cost** — real-time cost tracking, updated as agents work
