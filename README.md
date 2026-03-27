@@ -2,9 +2,9 @@
 
 # cctrack
 
-**See what your Claude Code agents are doing — and what it costs.**
+**Real-time Claude Code agent monitor. See what they're doing — and what it costs.**
 
-> Other tools show you the bill after. cctrack shows you the work as it happens.
+> A tiny Rust daemon that watches your agents work. Always on, <10MB RAM.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Rust](https://img.shields.io/badge/Rust-000000?logo=rust&logoColor=white)](https://www.rust-lang.org/)
