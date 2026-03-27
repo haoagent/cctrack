@@ -94,7 +94,7 @@ cctrack hooks uninstall     # remove hook
 
 | Key | Action |
 |-----|--------|
-| `↑↓` / `jk` | Scroll |
+| `↑↓` / `jk` | Scroll within panel |
 | `←→` | Switch panel |
 | `Tab` | Cycle session tabs |
 | `q` | Quit |
