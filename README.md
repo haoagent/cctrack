@@ -47,21 +47,11 @@ Use Claude Code normally. cctrack picks up everything automatically.
 - **🔒 Local-Only** — all computation on your machine. No telemetry, no cloud
 - **🦀 Tiny Footprint** — single Rust binary, ~3MB, <10MB RAM
 
-## cctrack vs ccusage
+## Acknowledgments
 
-[ccusage](https://github.com/ryoppippi/ccusage) is great for after-the-fact analysis. cctrack is for **live monitoring**. They complement each other:
+Built on the shoulders of [ccusage](https://github.com/ryoppippi/ccusage) — the excellent Claude Code cost analyzer by [@ryoppippi](https://github.com/ryoppippi). cctrack uses the same tiered pricing model and validates against ccusage for accuracy (< 0.3% difference).
 
-| | cctrack | ccusage |
-|---|---|---|
-| **When** | While you're working | After you're done |
-| **Updates** | Real-time (SSE) | On-demand scan |
-| **Multi-session** | All sessions at once | One report |
-| **Quota/cap** | Live 5h/7d bars | Not available |
-| **Activity feed** | Live tool calls | Not available |
-| **Cost accuracy** | ✅ Same | ✅ Same |
-| **Install** | Rust binary + hooks | `npx ccusage` |
-
-Both read the same `~/.claude/projects/` transcripts. Same pricing model. < 0.3% cost difference.
+**ccusage** is the gold standard for post-session cost analysis. **cctrack** adds real-time monitoring on top — live sessions, quota bars, activity feed. They complement each other perfectly.
 
 ## Usage
 
