@@ -38,7 +38,7 @@ cctrack --web            # starts TUI + web dashboard
 
 Open **http://localhost:7891** in your browser. Use Claude Code normally — cctrack picks up everything automatically.
 
-Each Claude Code session gets its own tab. Run multiple sessions across projects and monitor them all at once.
+Sessions with sub-agents get their own tab. Tabs appear when agents spawn and disappear after all agents shut down. The ALL tab always shows every session.
 
 ## Features
 
