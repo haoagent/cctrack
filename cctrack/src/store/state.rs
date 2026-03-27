@@ -20,6 +20,8 @@ struct TeamState {
     message_keys: Vec<(String, String)>,
     tool_events: Vec<ToolEvent>,
     last_activity_at: std::time::Instant,
+    /// Whether the lead session has a proper title (not just CWD fallback)
+    has_lead_title: bool,
 }
 
 const TEAM_EXPIRE_SECS: u64 = 86400;         // 24 hours → remove team tab
@@ -54,6 +56,7 @@ impl TeamState {
             // Start as "old" — only real activity will make it fresh.
             // This ensures dead teams from previous runs don't appear active.
             last_activity_at: std::time::Instant::now() - std::time::Duration::from_secs(ENDED_TIMEOUT_SECS + 1),
+            has_lead_title: false,
         }
     }
 
@@ -220,21 +223,75 @@ impl TeamState {
         self.last_activity_at = std::time::Instant::now();
     }
 
+    /// Try to read the lead session's transcript title and update agent + team name.
+    /// Returns the new team name if updated, so the caller can update session_teams.
+    fn retry_lead_title(&mut self, transcript_path: Option<&str>, cwd: Option<&str>) -> Option<String> {
+        if self.has_lead_title || !self.config.name.starts_with("session:") {
+            return None;
+        }
+        let lead_id = self.config.lead_session_id.clone()?;
+
+        // Determine which transcript to read
+        let tp = transcript_path.map(String::from).or_else(|| {
+            // Derive parent transcript from subagent transcript path
+            // subagent: .../parent-id/subagents/agent-xxx.jsonl
+            // parent:   .../parent-id.jsonl
+            self.tool_events.last()
+                .and_then(|e| e.transcript_path.as_deref())
+                .and_then(|tp| {
+                    let p = std::path::Path::new(tp);
+                    let subagents_dir = p.parent()?;
+                    let session_dir = subagents_dir.parent()?;
+                    let project_dir = session_dir.parent()?;
+                    let parent_file = project_dir.join(format!("{}.jsonl", lead_id));
+                    if parent_file.exists() { Some(parent_file.to_string_lossy().to_string()) } else { None }
+                })
+        })?;
+
+        let title = crate::collector::hook_server::read_session_title(&tp)?;
+        let cwd_name = cwd
+            .or_else(|| self.tool_events.last().and_then(|e| e.cwd.as_deref()))
+            .and_then(|p| std::path::Path::new(p).file_name())
+            .and_then(|f| f.to_str())
+            .unwrap_or("");
+
+        let new_name = if cwd_name.is_empty() || title.starts_with(cwd_name) {
+            title
+        } else {
+            format!("{}: {}", cwd_name, title)
+        };
+
+        // Update lead agent name
+        if let Some(agent) = self.agents.iter_mut().find(|a| a.agent_id == lead_id) {
+            agent.name = new_name.clone();
+        }
+
+        let new_team_name = format!("session:{}", new_name);
+        self.config.name = new_team_name.clone();
+        self.has_lead_title = true;
+        Some(new_team_name)
+    }
+
     /// Check if team is expired: all agents shutdown + no recent activity.
     /// Uses both in-memory timer AND config file mtime for restart resilience.
     fn is_expired(&self) -> bool {
+        let all_inactive = !self.agents.is_empty()
+            && self.agents.iter().all(|a| a.status != AgentStatus::Active);
         let all_shutdown = !self.agents.is_empty()
             && self.agents.iter().all(|a| a.status == AgentStatus::Shutdown);
-        if !all_shutdown {
-            return false;
-        }
+
         let expire_secs = if self.config.name.starts_with("session:") {
             SESSION_TAB_EXPIRE_SECS
         } else {
             TEAM_EXPIRE_SECS
         };
+
         // For session tabs: check transcript file mtime (survives restarts)
+        // Session tabs expire when all agents are inactive (not just shutdown)
         if self.config.name.starts_with("session:") {
+            if !all_inactive {
+                return false;
+            }
             // Use lead session's transcript mtime as the authoritative timer
             if let Some(ref sid) = self.config.lead_session_id {
                 // Check parent transcript: find it from agents or derive from lead_session_id
@@ -261,7 +318,11 @@ impl TeamState {
             return true;
         }
 
-        // For real teams: check in-memory timer
+        // For real teams: require all agents to be shutdown first
+        if !all_shutdown {
+            return false;
+        }
+        // Then check in-memory timer
         if self.last_activity_at.elapsed().as_secs() >= expire_secs {
             return true;
         }
@@ -534,10 +595,11 @@ impl Store {
                 // Rebuild session_teams for sub-agents
                 if let Some(ref pid) = ps.parent_id {
                     if !session_teams.contains_key(pid) {
-                        let parent_name = unregistered.iter()
-                            .find(|s| s.agent.agent_id == *pid)
+                        let parent_session = unregistered.iter().find(|s| s.agent.agent_id == *pid);
+                        let parent_name = parent_session
                             .map(|s| s.agent.name.clone())
                             .unwrap_or_else(|| format!("session-{}", &pid[..8.min(pid.len())]));
+                        let parent_has_title = parent_session.map(|s| s.has_custom_name).unwrap_or(false);
                         let team_name = format!("session:{}", parent_name);
                         session_teams.insert(pid.clone(), team_name.clone());
 
@@ -549,6 +611,7 @@ impl Store {
                             lead_session_id: Some(pid.clone()),
                             members: Vec::new(),
                         });
+                        ts.has_lead_title = parent_has_title;
                         if let Some(parent) = unregistered.iter().find(|s| s.agent.agent_id == *pid) {
                             ts.agents.push(parent.agent.clone());
                         }
@@ -619,9 +682,13 @@ impl Store {
                     let is_subagent = parent_id.is_some();
 
                     // 1. Match by agent name/id in existing teams
-                    for state in teams.values_mut() {
+                    let mut team_rename: Option<(String, String)> = None;
+                    for (tname, state) in teams.iter_mut() {
                         if state.agents.iter().any(|a| a.name == *session_id || a.agent_id == *session_id) {
                             state.push_tool_event(tool_event.clone());
+                            if let Some(new_name) = state.retry_lead_title(tool_event.transcript_path.as_deref(), tool_event.cwd.as_deref()) {
+                                team_rename = Some((tname.clone(), new_name));
+                            }
                             found = true;
                             break;
                         }
@@ -629,14 +696,39 @@ impl Store {
 
                     // 2. Match by lead_session_id
                     if !found {
-                        for state in teams.values_mut() {
+                        for (tname, state) in teams.iter_mut() {
                             if state.config.lead_session_id.as_deref() == Some(session_id.as_str()) {
                                 state.ensure_agent(session_id, tool_event.cwd.as_deref(), tool_event.transcript_path.as_deref());
                                 state.push_tool_event(tool_event.clone());
+                                if let Some(new_name) = state.retry_lead_title(tool_event.transcript_path.as_deref(), tool_event.cwd.as_deref()) {
+                                    team_rename = Some((tname.clone(), new_name));
+                                }
                                 found = true;
                                 break;
                             }
                         }
+                    }
+
+                    // Apply team rename if title was resolved
+                    if let Some((old_name, new_name)) = team_rename {
+                        if let Some(state) = teams.remove(&old_name) {
+                            // Update all_sessions with the new lead agent name
+                            if let Some(ref lid) = state.config.lead_session_id {
+                                if let Some(agent) = state.agents.iter().find(|a| &a.agent_id == lid) {
+                                    if let Some(a) = all_sessions.get_mut(lid) {
+                                        a.name = agent.name.clone();
+                                    }
+                                }
+                            }
+                            teams.insert(new_name.clone(), state);
+                            // Update session_teams mapping
+                            for (_, tn) in session_teams.iter_mut() {
+                                if *tn == old_name {
+                                    *tn = new_name.clone();
+                                }
+                            }
+                        }
+                        dirty = true;
                     }
 
                     // 3. Route to unregistered sessions
@@ -775,10 +867,11 @@ impl Store {
                         }
 
                         if !session_teams.contains_key(pid) {
-                            let parent_name = unregistered.iter()
-                                .find(|s| s.agent.agent_id == *pid)
+                            let parent_session = unregistered.iter().find(|s| s.agent.agent_id == *pid);
+                            let parent_name = parent_session
                                 .map(|s| s.agent.name.clone())
                                 .unwrap_or_else(|| format!("session-{}", &pid[..8.min(pid.len())]));
+                            let parent_has_title = parent_session.map(|s| s.has_custom_name).unwrap_or(false);
                             let team_name = format!("session:{}", parent_name);
                             session_teams.insert(pid.clone(), team_name.clone());
 
@@ -790,20 +883,26 @@ impl Store {
                                 lead_session_id: Some(pid.clone()),
                                 members: Vec::new(),
                             });
+                            ts.has_lead_title = parent_has_title;
                             if let Some(parent) = unregistered.iter().find(|s| s.agent.agent_id == *pid) {
                                 ts.agents.push(parent.agent.clone());
                             }
                             teams.insert(team_name, ts);
                         }
                         // Add child to the dynamic team
-                        if let Some(team_name) = session_teams.get(pid) {
-                            if let Some(ts) = teams.get_mut(team_name) {
+                        if let Some(team_name) = session_teams.get(pid).cloned() {
+                            let mut renamed: Option<String> = None;
+                            if let Some(ts) = teams.get_mut(&team_name) {
                                 if let Some(child) = unregistered.iter().find(|s| s.agent.agent_id == *session_id) {
                                     if !ts.agents.iter().any(|a| a.agent_id == *session_id) {
                                         ts.agents.push(child.agent.clone());
                                     }
                                 }
                                 ts.push_tool_event(tool_event.clone());
+                                // Retry lead title on subagent events too
+                                if let Some(new_name) = ts.retry_lead_title(None, tool_event.cwd.as_deref()) {
+                                    renamed = Some(new_name);
+                                }
                                 // Keep session tab alive based on most recent sub-agent transcript mtime
                                 if let Some(ref tp) = tool_event.transcript_path {
                                     if let Ok(meta) = std::fs::metadata(tp) {
@@ -815,6 +914,15 @@ impl Store {
                                             }
                                         }
                                     }
+                                }
+                            }
+                            // Apply rename outside borrow
+                            if let Some(new_name) = renamed {
+                                if let Some(state) = teams.remove(&team_name) {
+                                    teams.insert(new_name.clone(), state);
+                                }
+                                if let Some(tn) = session_teams.get_mut(pid) {
+                                    *tn = new_name;
                                 }
                             }
                         }
@@ -1019,10 +1127,11 @@ impl Store {
                         // Create/update dynamic tab
                         let pid = &parent_session_id;
                         if !session_teams.contains_key(pid) {
-                            let parent_name = unregistered.iter()
-                                .find(|s| s.agent.agent_id == *pid)
+                            let parent_session = unregistered.iter().find(|s| s.agent.agent_id == *pid);
+                            let parent_name = parent_session
                                 .map(|s| s.agent.name.clone())
                                 .unwrap_or_else(|| format!("session-{}", &pid[..8.min(pid.len())]));
+                            let parent_has_title = parent_session.map(|s| s.has_custom_name).unwrap_or(false);
                             let team_name = format!("session:{}", parent_name);
                             session_teams.insert(pid.clone(), team_name.clone());
                             let mut ts = TeamState::new(TeamConfig {
@@ -1033,6 +1142,7 @@ impl Store {
                                 lead_session_id: Some(pid.clone()),
                                 members: Vec::new(),
                             });
+                            ts.has_lead_title = parent_has_title;
                             if let Some(parent) = unregistered.iter().find(|s| s.agent.agent_id == *pid) {
                                 ts.agents.push(parent.agent.clone());
                             }
