@@ -53,17 +53,20 @@
     var t = S.snap && S.snap.teams && S.snap.teams[S.ti];
     if (!t) return;
     var isAll = t.name === 'all';
+    var nameEl = document.getElementById('hero-name');
 
     if (isAll && S.stats) {
-      // ALL tab: show today from stats (global)
       $('hero-cost', '$' + S.stats.today.cost_usd.toFixed(2));
       $('hero-label', 'today');
+      if (nameEl) { nameEl.style.display = 'none'; nameEl.textContent = ''; }
     } else {
-      // Session tab: show parent agent's cost (same as ALL tab row)
       var parent = (t.agents || []).find(function(a) { return a.agent_type !== 'subagent'; });
       var cost = parent && parent.tokens ? ecost(parent.tokens) : 0;
       $('hero-cost', '$' + cost.toFixed(2));
       $('hero-label', 'session cost');
+      // Show full session name
+      var fullName = t.name.replace(/^session:/, '');
+      if (nameEl) { nameEl.textContent = fullName; nameEl.style.display = fullName ? '' : 'none'; }
     }
   }
 
