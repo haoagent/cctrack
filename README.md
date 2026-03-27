@@ -24,22 +24,48 @@ cctrack --web                # → open localhost:7891
 
 Done. Use Claude Code normally — cctrack picks up everything automatically.
 
-## What you see
+## Web Dashboard
 
-- **Live cost** — per-session, per-project, updates in real time
-- **Every session** — status, model (opus/sonnet/haiku), running cost
-- **Sub-agent trees** — spawned agents, their models, individual costs
-- **30-day charts** — token usage (output, input, cache) and daily cost
-- **Cache hit rate** — is prompt caching actually saving you money?
-- **Quota bars** — 5h / 7d usage from Claude's API, no more surprise rate limits
+Open **http://localhost:7891** after starting `cctrack --web`.
+
+- **Sessions panel** — every active session with status indicator, model, tokens, and running cost
+- **Cost chart** — daily spending over the last 30 days, with 7d/30d/All toggle
+- **Token chart** — stacked token usage (output, input, cache read/write) per day
+- **Cache hit rate** — percentage of tokens served from cache, so you know if caching is saving money
+- **Quota bars** — real 5h and 7d usage pulled from Claude's API. No more guessing when you'll hit the rate limit
+
+Sessions with sub-agents automatically get their own tab. Click a tab to drill into that session's agent tree — see each sub-agent's model, status, and individual cost.
+
+## TUI
 
 <div align="center">
-
 <img src="assets/tui.png" width="720" />
-
-*TUI mode — `Tab` to switch sessions, runs alongside your editor*
-
 </div>
+
+The terminal UI runs alongside your editor. Panels:
+
+| Panel | What it shows |
+|-------|--------------|
+| **Sessions** | All sessions with status, model, tokens, cost |
+| **Stats** | Today / this week / this month totals, per-project breakdown |
+| **Live Activity** | Tool calls as they happen — Bash, Edit, Read, Grep, Agent — with duration |
+
+### Status indicators
+
+| Symbol | Meaning |
+|--------|---------|
+| ● green | Active — running right now |
+| ○ yellow | Idle — waiting for input |
+| · gray | Shutdown — session ended |
+
+### Keyboard
+
+| Key | Action |
+|-----|--------|
+| `Tab` | Switch session tabs |
+| `↑↓` / `jk` | Scroll within panel |
+| `←→` | Switch panel |
+| `q` | Quit |
 
 ## Commands
 
@@ -48,15 +74,41 @@ cctrack                     # TUI only
 cctrack --web               # TUI + web dashboard
 cctrack --web-only          # web only (headless)
 cctrack stats               # quick cost summary in terminal
+cctrack hooks install       # add hook to Claude Code (one-time)
+cctrack hooks uninstall     # remove hook
 ```
 
-## Privacy
+### `cctrack stats`
 
-cctrack runs 100% on your machine. It reads Claude Code's local transcript files and receives hook events on localhost. No data leaves your machine, no telemetry, no cloud.
+Quick cost summary without starting the dashboard:
+
+```
+               sessions     tokens        cost
+Today               5       62.7M       $34.91
+This week         162     1012.4M      $827.82
+March             451     2348.9M     $1764.07
+Total             507     2487.9M     $1858.83
+
+By Project
+ReAgent3          448     1988.3M     $1486.68
+Clipal             47      468.5M      $337.50
+```
 
 ## Quota monitor
 
-For real-time quota bars (5h / 7d), log in with `claude /login` then click "Connect to Claude for quota" in the web dashboard.
+See real-time quota usage (5h / 7d bars) by logging in:
+
+```bash
+claude /login
+```
+
+Then click **"Connect to Claude for quota"** in the web dashboard. cctrack reads your OAuth token locally — nothing is sent to third parties.
+
+## How it works
+
+cctrack installs a [Claude Code hook](https://docs.anthropic.com/en/docs/claude-code) that sends tool call events to a local server (`localhost:7890`). It also reads transcript files from `~/.claude/projects/` for session history and token counts.
+
+Everything runs locally. No telemetry, no cloud, no data leaves your machine.
 
 ## Built with Claude Code
 
