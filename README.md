@@ -12,8 +12,6 @@
 
 <img src="assets/web-top.png" width="720" />
 
-*I pay $200/month for Max plan. One day I burned through $420 worth of API-equivalent tokens before getting rate-limited — and had no idea until it happened. So I built this.*
-
 </div>
 
 ## Install
