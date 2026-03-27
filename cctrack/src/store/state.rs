@@ -587,7 +587,7 @@ impl Store {
                     }
                 }
                 let is_subagent = ps.parent_id.is_some();
-                let agent = Agent {
+                let mut agent = Agent {
                     name: ps.name,
                     agent_id: ps.agent_id.clone(),
                     agent_type: ps.agent_type,
@@ -601,18 +601,41 @@ impl Store {
                 if is_subagent {
                     child_sessions.insert(ps.agent_id.clone());
                 }
-                all_sessions.insert(ps.agent_id.clone(), agent.clone());
 
                 let cwd_name = ps.cwd.as_deref()
                     .and_then(|p| std::path::Path::new(p).file_name())
                     .and_then(|f| f.to_str())
                     .unwrap_or("").to_string();
+
+                // Re-read title on restore if the persisted name looks like just a CWD fallback
+                let has_title = if !is_subagent && !agent.name.contains(": ") && (agent.name == cwd_name || agent.name.starts_with("session-")) {
+                    if let Some(ref tp) = ps.transcript_path {
+                        if let Some(title) = crate::collector::hook_server::read_session_title(tp) {
+                            let new_name = if cwd_name.is_empty() || title.starts_with(&cwd_name) {
+                                title
+                            } else {
+                                format!("{}: {}", cwd_name, title)
+                            };
+                            agent.name = new_name;
+                            true
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                } else {
+                    true
+                };
+
+                all_sessions.insert(ps.agent_id.clone(), agent.clone());
+
                 unregistered.push(UnregisteredSession {
                     agent,
                     tool_events: Vec::new(),
                     todos: Vec::new(),
                     last_event_at: std::time::Instant::now() - std::time::Duration::from_secs(ENDED_TIMEOUT_SECS + 1),
-                    has_custom_name: true,
+                    has_custom_name: has_title,
                     cwd_name,
                     transcript_path: ps.transcript_path,
                 });
