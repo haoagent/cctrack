@@ -129,18 +129,6 @@ claude /login
 
 cctrack reads your OAuth token from the macOS Keychain and calls Anthropic's usage API locally. Click **"Connect to Claude for quota"** in the web dashboard, or it auto-detects on page load.
 
-## Claude Code Skill
-
-Install via [skills.sh](https://skills.sh/haoagent/cctrack/claude-code-track):
-
-```bash
-npx skills add haoagent/cctrack
-```
-
-Or manually copy [`skills/claude-code-track/SKILL.md`](../skills/claude-code-track/SKILL.md) to your project's `.claude/skills/` directory.
-
-Then just say "track cost" or "monitor sessions" in Claude Code.
-
 ## Acknowledgments
 
 Inspired by [ccusage](https://github.com/ryoppippi/ccusage) by [@ryoppippi](https://github.com/ryoppippi) — the excellent Claude Code cost analyzer. cctrack builds on the same concept, reimagined in Rust as an always-on daemon.
