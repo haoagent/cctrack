@@ -67,7 +67,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &AppState, snapshot: &StoreSna
             let badge = if t.name == "all" || count <= 1 {
                 String::new()
             } else {
-                format!(" {}", count)
+                format!(" ({})", count)
             };
 
             if is_selected {
