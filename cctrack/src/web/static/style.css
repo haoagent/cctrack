@@ -138,11 +138,22 @@ body {
   padding: 4px 12px;
   border-radius: 6px;
   transition: all 0.15s;
+  cursor: pointer;
 }
 .cap-connect:hover {
   color: var(--accent);
   border-color: var(--accent);
 }
+.cap-plan-label { font-size: 11px; font-weight: 600; color: var(--text-2); margin-right: 12px; }
+.cap-seg { display: inline-flex; align-items: center; gap: 6px; margin-left: 10px; }
+.cap-lbl { font-size: 10px; color: var(--text-3); font-weight: 500; }
+.cap-track { width: 80px; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+.cap-fill { height: 100%; border-radius: 2px; background: var(--accent); transition: width 0.5s ease; opacity: 0.6; }
+.cap-fill.high { background: var(--yellow); opacity: 0.8; }
+.cap-fill.full { background: var(--red); opacity: 0.8; }
+.cap-pct { font-size: 11px; font-weight: 600; color: var(--text-2); }
+.cap-reset { font-size: 10px; color: var(--text-3); }
+.cap-err { font-size: 11px; color: var(--red); }
 
 /* ─── Main Grid ─── */
 .grid {
@@ -232,6 +243,10 @@ tr:hover td { background: var(--bg-hover); }
   color: var(--text-3);
   margin-left: 6px;
 }
+.model-label { font-size: 11px; font-weight: 500; }
+.model-label.model-opus { color: var(--accent); }
+.model-label.model-sonnet { color: var(--blue); }
+.model-label.model-haiku { color: var(--text-3); }
 
 /* Task status */
 .ts-completed { color: var(--green); }

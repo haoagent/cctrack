@@ -105,13 +105,13 @@
     var ag=t.agents||[], tb=document.getElementById('sessions-body'), em=document.getElementById('sessions-empty');
     // Dynamic header: Cost first (most important), Tokens secondary
     var thead = tb.parentElement.querySelector('thead tr');
-    if(thead) thead.innerHTML = '<th>Name</th><th>Status</th><th class="r">Cost</th><th class="r hide-narrow">Tokens</th>';
+    if(thead) thead.innerHTML = '<th>Name</th><th>Status</th><th>Model</th><th class="r">Cost</th>';
     if(!ag.length){ tb.innerHTML=''; em.style.display='block'; return; }
     em.style.display='none';
     tb.innerHTML = ag.map(function(a){
       var s=(a.status||'unknown').toLowerCase(), tok=a.tokens?ttok(a.tokens):0, cost=a.tokens?ecost(a.tokens):0;
       var m=a.model?smodel(a.model):'', sub=a.sub_agent_count&&a.sub_agent_count>0?'<span class="badge">'+a.sub_agent_count+'</span>':'';
-      return '<tr><td class="name" title="'+esc(a.name)+'">'+esc(a.name)+sub+'</td><td><span class="dot-s '+s+'"></span><span class="st '+s+'">'+cap1(a.status)+'</span></td><td class="r cost">'+(cost>0?'$'+cost.toFixed(2):'\u2014')+'</td><td class="r tok hide-narrow">'+(tok>0?fmtTok(tok):'\u2014')+'</td></tr>';
+      return '<tr><td class="name" title="'+esc(a.name)+'">'+esc(a.name)+sub+'</td><td><span class="dot-s '+s+'"></span><span class="st '+s+'">'+cap1(a.status)+'</span></td><td><span class="model-label model-'+m+'">'+esc(m||'\u2014')+'</span></td><td class="r cost">'+(cost>0?'$'+cost.toFixed(2):'\u2014')+'</td></tr>';
     }).join('');
   }
 
@@ -199,8 +199,57 @@
     el.scrollTop=el.scrollHeight;
   }
 
-  // Cap — placeholder until OAuth is implemented
-  function renderCap() {}
+  // Cap — OAuth usage from Anthropic API
+  var capData = null;
+  function fetchCap() {
+    fetch('/api/cap').then(function(r){return r.json();}).then(function(d){
+      capData = d;
+      renderCap();
+    }).catch(function(){});
+  }
+  document.getElementById('cap-connect').onclick = function(e) {
+    e.preventDefault();
+    fetchCap();
+  };
+
+  function renderCap() {
+    var el = document.getElementById('cap-inline');
+    if (!capData || !capData.ok) {
+      if (capData && capData.error) {
+        el.innerHTML = '<span class="cap-err">' + esc(capData.error) + '</span>';
+      }
+      return;
+    }
+    var s = capData.session, w = capData.weekly;
+    var plan = capData.plan || '';
+    // Format plan name
+    var planLabel = plan.indexOf('max_20x') >= 0 ? 'Max 20x' : plan.indexOf('max') >= 0 ? 'Max 5x' : plan.indexOf('pro') >= 0 ? 'Pro' : plan;
+    var h = '<span class="cap-plan-label">' + esc(planLabel) + '</span>';
+    if (s) {
+      var sp = Math.round(s.used_pct);
+      var cls = sp >= 90 ? ' full' : sp >= 70 ? ' high' : '';
+      var reset = s.resets_at ? fmtReset(s.resets_at) : '';
+      h += '<span class="cap-seg"><span class="cap-lbl">5h</span><div class="cap-track"><div class="cap-fill' + cls + '" style="width:' + Math.min(sp, 100) + '%"></div></div><span class="cap-pct mono">' + sp + '%</span>' + (reset ? '<span class="cap-reset">' + reset + '</span>' : '') + '</span>';
+    }
+    if (w) {
+      var wp = Math.round(w.used_pct);
+      var wcls = wp >= 90 ? ' full' : wp >= 70 ? ' high' : '';
+      h += '<span class="cap-seg"><span class="cap-lbl">7d</span><div class="cap-track"><div class="cap-fill' + wcls + '" style="width:' + Math.min(wp, 100) + '%"></div></div><span class="cap-pct mono">' + wp + '%</span></span>';
+    }
+    el.innerHTML = h;
+    // Auto-refresh every 60s
+    if (!S.capInterval) S.capInterval = setInterval(fetchCap, 60000);
+  }
+
+  function fmtReset(iso) {
+    try {
+      var d = new Date(iso), now = new Date();
+      var diff = d - now;
+      if (diff <= 0) return 'reset';
+      var h = Math.floor(diff / 3600000), m = Math.floor((diff % 3600000) / 60000);
+      return h + 'h ' + m + 'm';
+    } catch(e) { return ''; }
+  }
 
   // Charts
   function renderCharts() {
