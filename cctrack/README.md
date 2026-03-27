@@ -1,20 +1,24 @@
+<div align="center">
+
 # cctrack
 
-**Know exactly where your Claude Code dollars go.**
+**Real-time cost & activity dashboard for Claude Code**
 
-I spent $200 on Claude last week. $140 of it was one runaway agent I didn't notice until I got rate-limited. So I built this.
+> Know exactly where your Claude Code dollars go — while they're going.
 
-![cctrack dashboard](assets/web-top.png)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Rust](https://img.shields.io/badge/Rust-000000?logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![Claude Code](https://img.shields.io/badge/Claude_Code-cc5500?logo=anthropic&logoColor=white)](https://docs.anthropic.com/en/docs/claude-code)
+
+<img src="assets/web-top.png" width="720" />
+
+*I spent $200 on Claude last week. $140 of it was one runaway agent I didn't notice until I got rate-limited. So I built this.*
+
+</div>
 
 ## Install
 
 ```bash
-# Homebrew (macOS)
-brew install cctrack          # coming soon
-
-# Cargo
-cargo install cctrack         # from crates.io (coming soon)
-
 # From source
 git clone https://github.com/haoagent/cctrack && cd cctrack
 cargo install --path .
@@ -29,25 +33,23 @@ cctrack --web            # starts TUI + web dashboard at localhost:7891
 
 Use Claude Code normally. cctrack picks up everything automatically.
 
-## What You Get
+## Features
 
-**`$420.69 today`** — one number, front and center. Updated in real-time.
-
-**Sessions (3/5)** — every active session with status, model (opus/sonnet/haiku), and running cost. See which session is burning money right now.
-
-**Stats** — today / this week / total, broken down by project. Finally know that `api-gateway` costs 3x more than `frontend`.
-
-**Quota bars** — your real 5h and 7d usage from Claude's API. No more surprise rate limits.
-
-**Charts** — 30 days of token usage (stacked: output, input, cache) and daily cost. Cache hit rate tells you if caching is working. Switch between 7d / 30d / All.
-
-**Live activity** — watch tool calls happen: `Bash`, `Edit`, `Read`, `Grep`, `Agent` — with duration. Know what the agent is doing right now.
-
-**Agent teams** — click a session to see all sub-agents, their costs, their models. Track the full tree.
+- **💰 Live Cost** — `$420.69 today` front and center, updated in real-time
+- **📊 Sessions** — every active session with status, model (opus/sonnet/haiku), and running cost
+- **📈 Charts** — 30 days of token usage (stacked: output, input, cache) and daily cost with 7d/30d/All selector
+- **🎯 Cache Hit Rate** — see if caching is actually working (spoiler: 97%)
+- **⚡ Quota Monitor** — real 5h and 7d usage from Claude's OAuth API. No more surprise rate limits
+- **🔍 Live Activity** — watch tool calls happen: `Bash`, `Edit`, `Read`, `Grep`, `Agent` — with duration
+- **🤖 Agent Teams** — see sub-agents, their models, individual costs. Track the full team tree
+- **📋 Per-Project Stats** — today / this week / total, broken down by project
+- **🖥️ Web + TUI** — browser dashboard (SSE) or lightweight terminal UI
+- **🔒 Local-Only** — all computation on your machine. No telemetry, no cloud
+- **🦀 Tiny Footprint** — single Rust binary, ~3MB, <10MB RAM
 
 ## cctrack vs ccusage
 
-[ccusage](https://github.com/ryoppippi/ccusage) is great for after-the-fact analysis. cctrack is for live monitoring. They complement each other:
+[ccusage](https://github.com/ryoppippi/ccusage) is great for after-the-fact analysis. cctrack is for **live monitoring**. They complement each other:
 
 | | cctrack | ccusage |
 |---|---|---|
@@ -56,10 +58,36 @@ Use Claude Code normally. cctrack picks up everything automatically.
 | **Multi-session** | All sessions at once | One report |
 | **Quota/cap** | Live 5h/7d bars | Not available |
 | **Activity feed** | Live tool calls | Not available |
-| **Historical cost** | Same accuracy | Same accuracy |
+| **Cost accuracy** | ✅ Same | ✅ Same |
 | **Install** | Rust binary + hooks | `npx ccusage` |
 
 Both read the same `~/.claude/projects/` transcripts. Same pricing model. < 0.3% cost difference.
+
+## Usage
+
+```bash
+# Dashboard
+cctrack                     # TUI dashboard
+cctrack --web               # TUI + web dashboard
+cctrack --web-only          # web only (localhost:7891)
+
+# Tools
+cctrack stats               # quick cost summary in terminal
+cctrack pricing-check       # validate pricing vs LiteLLM
+
+# Hooks
+cctrack hooks install       # add hook to Claude Code
+cctrack hooks uninstall     # remove hook
+```
+
+## TUI Keybindings
+
+| Key | Action |
+|-----|--------|
+| `↑↓` / `jk` | Scroll within panel |
+| `←→` | Switch panel |
+| `Tab` | Cycle session tabs |
+| `q` | Quit |
 
 ## What `hooks install` Does
 
@@ -73,31 +101,7 @@ It adds one line to `~/.claude/settings.json`:
 }
 ```
 
-This sends tool call events to cctrack's local server. **Nothing leaves your machine.** No telemetry, no cloud. Everything stays on localhost. (The web dashboard loads Chart.js from CDN for charts; use `--no-cdn` to bundle it locally.)
-
-Run `cctrack hooks uninstall` to remove it.
-
-## Usage
-
-```bash
-cctrack                     # TUI dashboard
-cctrack --web               # TUI + web dashboard
-cctrack --web-only          # web only (localhost:7891)
-cctrack stats               # quick cost summary in terminal
-cctrack pricing-check       # validate pricing vs LiteLLM
-
-cctrack hooks install       # add hook to Claude Code
-cctrack hooks uninstall     # remove hook
-```
-
-## TUI
-
-| Key | Action |
-|-----|--------|
-| `↑↓` / `jk` | Scroll within panel |
-| `←→` | Switch panel |
-| `Tab` | Cycle session tabs |
-| `q` | Quit |
+Tool call events go to cctrack's local server. **Nothing leaves your machine.** Run `cctrack hooks uninstall` to remove it.
 
 ## How It Works
 
@@ -111,13 +115,9 @@ You ──→ Claude Code ──→ transcripts (~/.claude/projects/)
                        └─────────────┘
 ```
 
-All computation is local. Reads transcripts + hook events. Computes costs with tiered pricing. Renders to TUI and/or web.
-
 ## Tech
 
-Single Rust binary. ~3MB. <10MB RAM.
-
-Ratatui (TUI) + Axum (web server + SSE) + Chart.js (CDN, no build step). tokio async runtime.
+Single Rust binary. Ratatui (TUI) + Axum (web + SSE) + Chart.js (CDN). tokio async.
 
 ## License
 
