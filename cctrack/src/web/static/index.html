@@ -65,16 +65,16 @@
         </div>
       </section>
 
-      <!-- Chart range selector -->
-      <div class="span-full chart-range">
-        <button class="range-btn" data-range="7">7d</button>
-        <button class="range-btn active" data-range="30">30d</button>
-        <button class="range-btn" data-range="0">All</button>
-      </div>
-
       <!-- Charts: two side by side -->
       <section class="card chart-card">
-        <h2 class="card-title" id="token-chart-title">Token Usage <span class="subtitle">30d</span></h2>
+        <div class="card-title-row">
+          <h2 class="card-title" id="token-chart-title">Token Usage <span class="subtitle">30d</span></h2>
+          <div class="chart-range">
+            <button class="range-btn" data-range="7">7d</button>
+            <button class="range-btn active" data-range="30">30d</button>
+            <button class="range-btn" data-range="0">All</button>
+          </div>
+        </div>
         <div class="chart-box"><canvas id="token-chart"></canvas></div>
       </section>
 

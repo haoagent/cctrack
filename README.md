@@ -2,9 +2,9 @@
 
 # cctrack
 
-**Real-time usage & activity dashboard for Claude Code**
+**See what your Claude Code agents are doing — and what it costs.**
 
-> See how hard your Claude Code subscription is working for you.
+> Other tools show you the bill after. cctrack shows you the work as it happens.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Rust](https://img.shields.io/badge/Rust-000000?logo=rust&logoColor=white)](https://www.rust-lang.org/)
@@ -66,7 +66,13 @@ cctrack hooks install       # add hook to Claude Code
 cctrack hooks uninstall     # remove hook
 ```
 
-## TUI Keybindings
+## TUI
+
+| Symbol | Color | Status |
+|--------|-------|--------|
+| ● | Green | Active — running right now |
+| ○ | Yellow | Idle — waiting for input |
+| · | Gray | Shutdown — session ended |
 
 | Key | Action |
 |-----|--------|
