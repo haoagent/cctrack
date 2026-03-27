@@ -1,135 +1,123 @@
 # cctrack
 
-Real-time observability dashboard for Claude Code sessions. Track active agents, token usage, costs, and tool activity across all your Claude Code sessions.
+**Know exactly where your Claude Code dollars go.**
 
-## Features
+I spent $200 on Claude last week. $140 of it was one runaway agent I didn't notice until I got rate-limited. So I built this.
 
-- **Real-time monitoring** — See active sessions, sub-agents, and tool calls as they happen
-- **Token & cost tracking** — Per-session token counts with tiered pricing (Opus/Sonnet/Haiku)
-- **Web dashboard** — Premium web UI with charts, dark/light theme, responsive layout
-- **TUI dashboard** — Terminal UI with keyboard navigation, scrollable panels
-- **Multi-session** — Track multiple concurrent Claude Code sessions and sub-agents
-- **Team support** — Organize agents into teams with shared state
-- **Auto-discovery** — Detects Claude Code sessions via hooks and transcript scanning
-- **Stats & trends** — Daily token usage charts, cost trends, project breakdowns
+![cctrack dashboard](assets/web-top.png)
 
 ## Install
 
 ```bash
-# Clone and build
-git clone https://github.com/haoagent/cctrack.git
-cd cctrack/cctrack
-cargo install --path .
+# Homebrew (macOS)
+brew install cctrack          # coming soon
 
-# Install hooks into Claude Code (enables real-time tracking)
-cctrack hooks install
+# Cargo
+cargo install cctrack         # from crates.io (coming soon)
+
+# From source
+git clone https://github.com/haoagent/cctrack && cd cctrack
+cargo install --path .
 ```
+
+## Quick Start
+
+```bash
+cctrack hooks install    # one-time: adds a hook to ~/.claude/settings.json
+cctrack --web            # starts TUI + web dashboard at localhost:7891
+```
+
+Use Claude Code normally. cctrack picks up everything automatically.
+
+## What You Get
+
+**`$420.69 today`** — one number, front and center. Updated in real-time.
+
+**Sessions (3/5)** — every active session with status, model (opus/sonnet/haiku), and running cost. See which session is burning money right now.
+
+**Stats** — today / this week / total, broken down by project. Finally know that `api-gateway` costs 3x more than `frontend`.
+
+**Quota bars** — your real 5h and 7d usage from Claude's API. No more surprise rate limits.
+
+**Charts** — 30 days of token usage (stacked: output, input, cache) and daily cost. Cache hit rate tells you if caching is working. Switch between 7d / 30d / All.
+
+**Live activity** — watch tool calls happen: `Bash`, `Edit`, `Read`, `Grep`, `Agent` — with duration. Know what the agent is doing right now.
+
+**Agent teams** — click a session to see all sub-agents, their costs, their models. Track the full tree.
+
+## cctrack vs ccusage
+
+[ccusage](https://github.com/ryoppippi/ccusage) is great for after-the-fact analysis. cctrack is for live monitoring. They complement each other:
+
+| | cctrack | ccusage |
+|---|---|---|
+| **When** | While you're working | After you're done |
+| **Updates** | Real-time (SSE) | On-demand scan |
+| **Multi-session** | All sessions at once | One report |
+| **Quota/cap** | Live 5h/7d bars | Not available |
+| **Activity feed** | Live tool calls | Not available |
+| **Historical cost** | Same accuracy | Same accuracy |
+| **Install** | Rust binary + hooks | `npx ccusage` |
+
+Both read the same `~/.claude/projects/` transcripts. Same pricing model. < 0.3% cost difference.
+
+## What `hooks install` Does
+
+It adds one line to `~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "postToolExecution": "curl -s -X POST http://localhost:7890/hook -d @-"
+  }
+}
+```
+
+This sends tool call events to cctrack's local server. **Nothing leaves your machine.** No telemetry, no cloud. Everything stays on localhost. (The web dashboard loads Chart.js from CDN for charts; use `--no-cdn` to bundle it locally.)
+
+Run `cctrack hooks uninstall` to remove it.
 
 ## Usage
 
 ```bash
-# Start TUI + Web dashboard
-cctrack
+cctrack                     # TUI dashboard
+cctrack --web               # TUI + web dashboard
+cctrack --web-only          # web only (localhost:7891)
+cctrack stats               # quick cost summary in terminal
+cctrack pricing-check       # validate pricing vs LiteLLM
 
-# Web only (no TUI)
-cctrack --web-only
-
-# Custom web port
-cctrack --port 8080
-
-# View stats in terminal
-cctrack stats
+cctrack hooks install       # add hook to Claude Code
+cctrack hooks uninstall     # remove hook
 ```
 
-## Web Dashboard
+## TUI
 
-Premium web dashboard at `http://localhost:7891` with:
+| Key | Action |
+|-----|--------|
+| `↑↓` / `jk` | Scroll |
+| `←→` | Switch panel |
+| `Tab` | Cycle session tabs |
+| `q` | Quit |
 
-- **Sidebar** — Live session list with status indicators (green pulse = active, yellow = idle)
-- **Charts** — Token usage trend (30 days), daily cost bars, project cost donut
-- **Activity feed** — Real-time tool call stream with auto-scroll
-- **Todos & Messages** — Tabbed panels for todo tracking and inter-agent messages
-- **Theme toggle** — Dark/light mode, persisted to localStorage
-
-Data flows via Server-Sent Events (SSE) for real-time updates, stats refresh every 60s.
-
-### Layout
+## How It Works
 
 ```
-+---------------------------------------------------+
-|  cctrack    [Active: 2] [Sessions: 3] [Cost: $41] |
-+---------------------------------------------------+
-| ALL  | SESSION:CCTRACK | SESSION:REELA             |
-+------+--------------------------------------------+
-|      |  [Token Usage Chart]  [Cost]  [Projects]   |
-| Side |                                             |
-| bar  +---------------------------------------------+
-|      |  Activity | Todos | Messages                |
-| List |  10:30 Read src/main.rs                     |
-|      |  10:31 Edit src/web/mod.rs                  |
-+------+---------------------------------------------+
+You ──→ Claude Code ──→ transcripts (~/.claude/projects/)
+                    └──→ hook events (localhost:7890)
+                              │
+                       ┌──────┴──────┐
+                       │  TUI   Web  │
+                       │      SSE    │
+                       └─────────────┘
 ```
 
-## TUI Dashboard
+All computation is local. Reads transcripts + hook events. Computes costs with tiered pricing. Renders to TUI and/or web.
 
-Terminal-based dashboard with vim-style navigation:
+## Tech
 
-- **Arrow keys** — `↑↓` scroll, `←→` switch panels
-- **Tab** — Cycle through team tabs
-- **1-4** — Jump to panel (Agents, Todos, Activity, Messages)
-- **q** — Quit
+Single Rust binary. ~3MB. <10MB RAM.
 
-### Panels
-
-| Panel | Description |
-|-------|-------------|
-| Sessions/Agents | Active sessions with status dot, token count, cost |
-| Stats/Todos | Usage stats (ALL tab) or todo list (team tab) |
-| Activity | Live tool call feed with timestamps |
-| Messages | Inter-agent communication log |
-
-## Architecture
-
-```
-Claude Code sessions
-        |
-   PostToolUse hooks (HTTP → port 7890)
-        |
-   cctrack collector
-        |
-   Store (event processing + state)
-        |
-   watch::Receiver<StoreSnapshot>
-      /            \
-   TUI            Web Server
-  (ratatui)       (Axum + SSE)
-   port N/A       port 7891
-```
-
-- **Collectors**: Hook server, file watcher, startup scanner
-- **Store**: Event-driven state machine, builds immutable snapshots
-- **Persistence**: Saves to `~/.claude/cctrack-state.json`, survives restarts
-- **Pricing**: Tiered per-message pricing (200K threshold for Opus)
-
-## Configuration
-
-Config file at `~/.cctrack/config.toml`:
-
-```toml
-[web]
-port = 7891
-enabled = true
-
-[hooks]
-auto_install = true
-port = 7890
-```
-
-## Requirements
-
-- Rust 1.75+
-- Claude Code with hooks support
-- Modern terminal (for TUI) or browser (for web dashboard)
+Ratatui (TUI) + Axum (web server + SSE) + Chart.js (CDN, no build step). tokio async runtime.
 
 ## License
 
