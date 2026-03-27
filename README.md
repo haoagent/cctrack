@@ -24,7 +24,11 @@
 ## Install
 
 ```bash
-# From source
+# Download pre-built binary (macOS / Linux)
+curl -fsSL https://github.com/haoagent/cctrack/releases/latest/download/cctrack-$(uname -m)-apple-darwin.tar.gz | tar xz
+sudo mv cctrack /usr/local/bin/
+
+# Or build from source (requires Rust)
 git clone https://github.com/haoagent/cctrack && cd cctrack
 cargo install --path .
 ```
