@@ -290,7 +290,7 @@ pub fn read_session_title(path: &str) -> Option<String> {
     let file = std::fs::File::open(path).ok()?;
     let reader = std::io::BufReader::new(file);
     use std::io::BufRead;
-    for line in reader.lines().take(50) {
+    for line in reader.lines().take(200) {
         let line = match line {
             Ok(l) => l,
             Err(_) => continue,
@@ -337,35 +337,11 @@ pub fn read_session_title(path: &str) -> Option<String> {
 /// Clean user's first message into a usable session title.
 /// Returns None if the content is a file path, command, or too short.
 fn clean_session_title(content: &str) -> Option<String> {
-    // Take first line only (ignore pasted content / multi-line)
     let first_line = content.lines().next().unwrap_or("").trim();
-
-    // Skip if empty or too short
-    if first_line.len() < 2 {
+    if first_line.is_empty() {
         return None;
     }
-    // Skip file paths (starts with or contains path separators)
-    if first_line.starts_with('/') || first_line.starts_with('~') || first_line.contains("\\") {
-        return None;
-    }
-    // Skip commands
-    if first_line.starts_with("git ") || first_line.starts_with("npm ") || first_line.starts_with("cargo ") {
-        return None;
-    }
-
-    // Truncate at 32 chars, but not in the middle of a path — if the truncated
-    // result contains a path-like segment, truncate before it instead
-    let mut title: String = first_line.chars().take(32).collect();
-    if let Some(pos) = title.find("/Users/").or_else(|| title.find("/home/")).or_else(|| title.find("/tmp/")) {
-        if pos == 0 {
-            return None;
-        }
-        title = title[..pos].trim().to_string();
-        if title.len() < 2 {
-            return None;
-        }
-    }
-
+    let title: String = first_line.chars().take(32).collect();
     Some(title)
 }
 
