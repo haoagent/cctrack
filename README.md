@@ -49,9 +49,7 @@ Use Claude Code normally. cctrack picks up everything automatically.
 
 ## Acknowledgments
 
-Built on the shoulders of [ccusage](https://github.com/ryoppippi/ccusage) — the excellent Claude Code cost analyzer by [@ryoppippi](https://github.com/ryoppippi). cctrack uses the same tiered pricing model and validates against ccusage for accuracy (< 0.3% difference).
-
-**ccusage** is the gold standard for post-session cost analysis. **cctrack** adds real-time monitoring on top — live sessions, quota bars, activity feed. They complement each other perfectly.
+Inspired by [ccusage](https://github.com/ryoppippi/ccusage) by [@ryoppippi](https://github.com/ryoppippi) — the excellent Claude Code cost analyzer. cctrack builds on the same concept, reimagined in Rust as an always-on daemon: real-time monitoring, live sessions, quota bars, activity feed, and a web dashboard. Runs in the background at <10MB RAM. Same tiered pricing model (< 0.3% cost difference).
 
 ## Usage
 
