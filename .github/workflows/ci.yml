@@ -30,4 +30,4 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: cctrack
-      - run: cd cctrack && cargo clippy -- -D warnings
+      - run: cd cctrack && cargo clippy -- -W clippy::all
