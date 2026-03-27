@@ -1,41 +1,54 @@
 ---
 name: claude-code-track
-description: Start real-time cost and activity monitoring for Claude Code sessions. Use when the user wants to track costs, monitor agent sessions, view token usage, or launch the cctrack dashboard.
+description: Query Claude Code usage costs, token stats, and session activity using cctrack. Use when the user asks about costs, spending, token usage, cache hit rates, which project or session is most expensive, or any billing/usage question about Claude Code.
 ---
 
-# Claude Code Track — Real-time Session Monitor
+# Claude Code Track
 
-Start the cctrack dashboard to monitor Claude Code sessions, costs, and agent activity in real-time.
+Query and analyze Claude Code usage data via `cctrack`.
 
-## Steps
+## Prerequisites
 
-1. Check if cctrack is installed:
-```bash
-which cctrack || echo "not installed"
+`cctrack` must be installed and hooks configured. If `cctrack` is not found, tell the user:
+```
+cctrack is not installed. Install it from https://github.com/haoagent/cctrack
 ```
 
-2. If not installed, install from GitHub releases:
+## Commands
+
+### Cost summary
 ```bash
-# macOS Apple Silicon
-curl -fsSL https://github.com/haoagent/cctrack/releases/latest/download/cctrack-aarch64-apple-darwin.tar.gz | tar xz
-sudo mv cctrack /usr/local/bin/
-
-# Or build from source
-git clone https://github.com/haoagent/cctrack && cd cctrack && cargo install --path .
+cctrack stats
 ```
+Returns today/week/month/total costs, token counts, and per-project breakdown.
 
-3. Install hooks (one-time setup):
-```bash
-cctrack hooks install
-```
-
-4. Start the web dashboard in background:
+### Start live dashboard
 ```bash
 cctrack --web-only &
 ```
+Opens web dashboard at http://localhost:7891. Only start if the user explicitly asks for the dashboard.
 
-5. Report to user:
+## How to answer questions
+
+- "How much did I spend today/this week/this month?" → run `cctrack stats`, read the output
+- "Which project costs the most?" → run `cctrack stats`, compare the By Project section
+- "How many tokens have I used?" → run `cctrack stats`, report token counts
+- "Show me the dashboard" → start `cctrack --web-only &`, tell user to open localhost:7891
+- "Is caching working?" → start dashboard for cache hit rate charts
+
+## Output format
+
+`cctrack stats` outputs a table like:
 ```
-cctrack is running. Open http://localhost:7891 in your browser.
-Sessions with sub-agents get their own tab.
+                 sess      tokens        cost
+Today               4       14.2M       $8.34
+This week         161      963.9M     $801.25
+March             450     2300.4M    $1737.49
+Total             506     2439.4M    $1832.26
+
+By Project
+ProjectA          448     1968.6M    $1475.39
+ProjectB           46      438.8M     $322.21
 ```
+
+Parse this output to answer the user's question directly. Give concise answers with the relevant numbers, don't dump raw output.
