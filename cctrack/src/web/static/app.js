@@ -212,9 +212,9 @@
     var titleEl=document.getElementById('token-chart-title');
     if(titleEl)titleEl.innerHTML='Token Usage <span class="subtitle">30d</span> <span class="subtitle" style="margin-left:8px">Cache Hit '+hitRate+'%</span>';
     if(ctx&&d.length) S.ch.tok=new Chart(ctx,{type:'bar',data:{labels:d.map(function(x){return x.date.slice(5);}),datasets:[
-      {label:'Cache Read',data:d.map(function(x){return x.cache_tokens||0;}),backgroundColor:dk?'rgba(193,95,60,0.2)':'rgba(193,95,60,0.15)',borderRadius:2,order:3},
-      {label:'Input',data:d.map(function(x){return x.input_tokens||0;}),backgroundColor:dk?'rgba(193,95,60,0.45)':'rgba(193,95,60,0.35)',borderRadius:2,order:2},
-      {label:'Output',data:d.map(function(x){return x.output_tokens||0;}),backgroundColor:dk?'rgba(193,95,60,0.7)':'rgba(193,95,60,0.6)',borderRadius:2,order:1}
+      {label:'Cache Read',data:d.map(function(x){return x.cache_tokens||0;}),backgroundColor:dk?'rgba(193,95,60,0.06)':'rgba(193,95,60,0.05)',borderColor:dk?'rgba(193,95,60,0.4)':'rgba(193,95,60,0.3)',borderWidth:1,borderDash:[3,3],borderRadius:2,order:3},
+      {label:'Input',data:d.map(function(x){return x.input_tokens||0;}),backgroundColor:dk?'rgba(193,95,60,0.25)':'rgba(193,95,60,0.2)',borderRadius:2,order:2},
+      {label:'Output',data:d.map(function(x){return x.output_tokens||0;}),backgroundColor:dk?'rgba(193,95,60,0.65)':'rgba(193,95,60,0.55)',borderRadius:2,order:1}
     ]},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{position:'top',labels:{boxWidth:10,padding:8,font:{size:11}}},tooltip:{callbacks:{label:function(c){return (c.dataset.label||'')+' '+fmtTok(c.raw);}}}},scales:{x:{stacked:true,grid:{display:false},ticks:{font:{size:10},maxRotation:0,maxTicksLimit:8}},y:{stacked:true,grid:{color:gc},ticks:{font:{size:10},callback:function(v){return fmtTok(v);}}}}}});
     // Cost
     if(S.ch.cost) S.ch.cost.destroy();
