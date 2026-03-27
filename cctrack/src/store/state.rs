@@ -1322,10 +1322,15 @@ impl Store {
                 })
                 .collect();
             // Sort: Active first, then by cost descending
+            // Sort: Active first, then Idle, then Shutdown; within each group by cost desc
             all_agents.sort_by(|a, b| {
-                let a_active = a.status == AgentStatus::Active;
-                let b_active = b.status == AgentStatus::Active;
-                b_active.cmp(&a_active).then(
+                let rank = |s: &AgentStatus| match s {
+                    AgentStatus::Active => 0,
+                    AgentStatus::Idle => 1,
+                    AgentStatus::Shutdown => 2,
+                    _ => 3,
+                };
+                rank(&a.status).cmp(&rank(&b.status)).then(
                     b.tokens.estimated_cost_for_model(b.model.as_deref())
                         .partial_cmp(&a.tokens.estimated_cost_for_model(a.model.as_deref()))
                         .unwrap_or(std::cmp::Ordering::Equal)
