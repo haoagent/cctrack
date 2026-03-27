@@ -608,7 +608,10 @@ impl Store {
                     .unwrap_or("").to_string();
 
                 // Re-read title on restore if the persisted name looks like just a CWD fallback
-                let has_title = if !is_subagent && !agent.name.contains(": ") && (agent.name == cwd_name || agent.name.starts_with("session-")) {
+                let looks_like_fallback = agent.name == cwd_name
+                    || agent.name.starts_with("session-")
+                    || (!agent.name.contains(": ") && cwd_name.is_empty());
+                let has_title = if !is_subagent && !agent.name.contains(": ") && looks_like_fallback {
                     if let Some(ref tp) = ps.transcript_path {
                         if let Some(title) = crate::collector::hook_server::read_session_title(tp) {
                             let new_name = if cwd_name.is_empty() || title.starts_with(&cwd_name) {
