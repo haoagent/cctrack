@@ -91,7 +91,7 @@
   function renderTabs(teams) {
     var el=document.getElementById('team-tabs');
     el.innerHTML = teams.map(function(t,i){
-      var on = (t.agents||[]).some(function(a){return a.status==='Active';});
+      var on = (t.agents||[]).some(function(a){return(a.status||'').toLowerCase()==='active';});
       var isAll = i === 0;
       var nm = tabLabel(t.name);
       var count = (t.agents||[]).length;
