@@ -53,7 +53,7 @@ Sessions with sub-agents get their own tab. Tabs appear when agents spawn and di
 - **⚡ Quota Monitor** — real 5h and 7d usage from Claude's OAuth API. No more surprise rate limits (see [Connect to Claude](#connect-to-claude) below)
 - **🔍 Live Activity** — watch tool calls happen: `Bash`, `Edit`, `Read`, `Grep`, `Agent` — with duration
 - **🤖 Agent Teams** — see sub-agents, their models, individual costs. Track the full team tree
-- **📋 Per-Project Stats** — today / this week / total, broken down by project
+- **📋 Cost Breakdown** — by session, by agent, by project. Know exactly where every dollar went
 - **🖥️ Web + TUI** — browser dashboard (SSE) or lightweight terminal UI
 - **🔒 Local-Only** — all computation on your machine. No telemetry, no cloud
 - **🦀 Tiny Footprint** — single Rust binary, ~3MB, <10MB RAM
