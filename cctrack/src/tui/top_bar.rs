@@ -62,6 +62,13 @@ pub fn render(frame: &mut Frame, area: Rect, app: &AppState, snapshot: &StoreSna
             let raw_label = display_name.to_uppercase();
             // Truncate long tab labels (max 24 display chars)
             let tab_label = truncate_display(&raw_label, 24);
+            // Agent count badge (skip for ALL tab)
+            let count = t.agents.len();
+            let badge = if t.name == "all" || count <= 1 {
+                String::new()
+            } else {
+                format!(" {}", count)
+            };
 
             if is_selected {
                 let tab_style = theme::tab_selected();
@@ -69,7 +76,11 @@ pub fn render(frame: &mut Frame, area: Rect, app: &AppState, snapshot: &StoreSna
 
                 spans.push(Span::styled(" ", tab_style));
                 spans.push(Span::styled(format!("{} ", dot_char), dot_style));
-                spans.push(Span::styled(format!("{} ", tab_label), tab_style));
+                spans.push(Span::styled(tab_label.clone(), tab_style));
+                if !badge.is_empty() {
+                    spans.push(Span::styled(badge.clone(), theme::dim()));
+                }
+                spans.push(Span::styled(" ", tab_style));
             } else {
                 let dot_style = if has_active {
                     theme::status_style(&AgentStatus::Active)
@@ -78,7 +89,11 @@ pub fn render(frame: &mut Frame, area: Rect, app: &AppState, snapshot: &StoreSna
                 };
                 spans.push(Span::styled("  ", theme::dim()));
                 spans.push(Span::styled(format!("{} ", dot_char), dot_style));
-                spans.push(Span::styled(format!("{} ", tab_label), theme::dim()));
+                spans.push(Span::styled(tab_label.clone(), theme::dim()));
+                if !badge.is_empty() {
+                    spans.push(Span::styled(badge.clone(), theme::dim()));
+                }
+                spans.push(Span::styled(" ", theme::dim()));
             }
         }
     }
