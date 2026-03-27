@@ -37,13 +37,25 @@ Open **http://localhost:7891** in your browser. Use Claude Code normally — cct
 - **📊 Sessions** — every active session with status, model (opus/sonnet/haiku), and running cost
 - **📈 Charts** — 30 days of token usage (stacked: output, input, cache) and daily cost with 7d/30d/All selector
 - **🎯 Cache Hit Rate** — see if caching is actually working (spoiler: 97%)
-- **⚡ Quota Monitor** — real 5h and 7d usage from Claude's OAuth API. No more surprise rate limits
+- **⚡ Quota Monitor** — real 5h and 7d usage from Claude's OAuth API. No more surprise rate limits (see [Connect to Claude](#connect-to-claude) below)
 - **🔍 Live Activity** — watch tool calls happen: `Bash`, `Edit`, `Read`, `Grep`, `Agent` — with duration
 - **🤖 Agent Teams** — see sub-agents, their models, individual costs. Track the full team tree
 - **📋 Per-Project Stats** — today / this week / total, broken down by project
 - **🖥️ Web + TUI** — browser dashboard (SSE) or lightweight terminal UI
 - **🔒 Local-Only** — all computation on your machine. No telemetry, no cloud
 - **🦀 Tiny Footprint** — single Rust binary, ~3MB, <10MB RAM
+
+## Connect to Claude
+
+To see your real quota usage (5h / 7d bars), cctrack reads your Claude Code OAuth token from the macOS Keychain. Just make sure you're logged in:
+
+```bash
+claude /login    # if not already logged in
+```
+
+Then click **"Connect to Claude for quota"** in the web dashboard, or cctrack will auto-detect it on page load. The token is read locally from your Keychain — nothing is sent anywhere except Anthropic's own usage API (`api.anthropic.com`).
+
+> **Note:** If the token has expired, run any Claude Code command (or `claude /login`) to refresh it, then click **Retry** in the dashboard.
 
 ## Acknowledgments
 
