@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>cctrack TUI</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#1a1a2e;color:#c8c8d0;font-family:'SF Mono','JetBrains Mono','Menlo',monospace;font-size:13px;line-height:1.4;padding:8px}
+.tui{width:980px;height:600px;display:flex;flex-direction:column;border:1px solid #333;border-radius:4px;overflow:hidden;background:#0f0f1a}
+
+/* Top bar */
+.topbar{display:flex;align-items:center;padding:4px 12px;background:#16162a;border-bottom:1px solid #333;font-size:12px;gap:8px}
+.tab{padding:2px 10px;border-radius:4px;color:#666;cursor:pointer}
+.tab.active{background:#2a2a4a;color:#e0e0e8;font-weight:600}
+.tab .dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:5px;vertical-align:middle}
+.dot.green{background:#22c55e;box-shadow:0 0 4px rgba(34,197,94,0.5)}
+.dot.gray{background:#555}
+.dot.yellow{background:#eab308}
+.breadcrumb{color:#555;font-size:11px;margin-left:auto}
+
+/* Main layout */
+.main{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;flex:1;gap:0}
+
+/* Panels */
+.panel{border:1px solid #333;overflow:hidden;display:flex;flex-direction:column}
+.panel.focus{border-color:#6366f1}
+.panel-title{font-size:11px;color:#888;padding:3px 10px;background:#16162a;border-bottom:1px solid #333}
+.panel-title span{color:#6366f1}
+
+/* Sessions table */
+.row{display:flex;padding:2px 10px;font-size:12px;border-bottom:1px solid #1a1a2e}
+.row.selected{background:#2a2a4a}
+.row.header{color:#555;font-size:11px}
+.col-name{flex:2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.col-status{flex:0 0 80px}
+.col-model{flex:0 0 60px;color:#666}
+.col-tokens{flex:0 0 60px;text-align:right;color:#666}
+.col-cost{flex:0 0 70px;text-align:right;color:#22c55e;font-weight:500}
+
+.active-text{color:#22c55e}
+.idle-text{color:#eab308}
+.shutdown-text{color:#555}
+.opus-text{color:#c47a5a}
+.sonnet-text{color:#6b8fd4}
+.haiku-text{color:#666}
+
+/* Stats */
+.stat-row{display:flex;padding:2px 10px;font-size:12px}
+.stat-label{flex:1;color:#888}
+.stat-sess{flex:0 0 50px;text-align:right;color:#666}
+.stat-tok{flex:0 0 60px;text-align:right;color:#666}
+.stat-cost{flex:0 0 70px;text-align:right;color:#22c55e;font-weight:500}
+.stat-row.total{color:#e0e0e8;font-weight:600}
+.stat-row.total .stat-label{color:#e0e0e8}
+.stat-section{color:#555;font-size:10px;padding:4px 10px 1px}
+
+/* Activity */
+.act{display:flex;padding:2px 10px;font-size:11px;gap:8px}
+.act-time{color:#555;min-width:55px}
+.act-tool{font-weight:600;min-width:40px}
+.act-tool.bash{color:#22c55e}
+.act-tool.edit{color:#e0e0e8}
+.act-tool.read{color:#888}
+.act-tool.grep{color:#888}
+.act-tool.agent{color:#e0e0e8}
+.act-summary{color:#666;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.act-dur{color:#444;min-width:50px;text-align:right}
+
+/* Status bar */
+.statusbar{display:flex;align-items:center;padding:3px 12px;background:#16162a;border-top:1px solid #333;font-size:11px;color:#555;gap:16px}
+.statusbar .key{color:#6366f1}
+</style>
+</head>
+<body>
+<div class="tui">
+  <!-- Top Bar -->
+  <div class="topbar">
+    <div class="tab active"><span class="dot green"></span> ALL</div>
+    <div class="tab"><span class="dot green"></span> STARTUP</div>
+    <div class="tab"><span class="dot green"></span> SIDE-PROJECT</div>
+    <div class="tab"><span class="dot gray"></span> HOMEWORK</div>
+    <span class="breadcrumb">STARTUP: Rewrite everything in R...</span>
+  </div>
+
+  <!-- Main Grid -->
+  <div class="main">
+    <!-- Sessions Panel -->
+    <div class="panel focus">
+      <div class="panel-title"><span>Sessions (3/5)</span></div>
+      <div class="row header">
+        <span class="col-name">NAME</span>
+        <span class="col-status">STATUS</span>
+        <span class="col-model">MODEL</span>
+        <span class="col-tokens">TOKENS</span>
+        <span class="col-cost">COST</span>
+      </div>
+      <div class="row selected">
+        <span class="col-name"><span class="dot green" style="margin-right:4px"></span> startup: Rewrite everything in Rust</span>
+        <span class="col-status active-text">Active</span>
+        <span class="col-model opus-text">opus</span>
+        <span class="col-tokens">42.1M</span>
+        <span class="col-cost">$186.42</span>
+      </div>
+      <div class="row">
+        <span class="col-name"><span class="dot green" style="margin-right:4px"></span> side-project: Yet another todo app</span>
+        <span class="col-status active-text">Active</span>
+        <span class="col-model opus-text">opus</span>
+        <span class="col-tokens">31.8M</span>
+        <span class="col-cost">$142.07</span>
+      </div>
+      <div class="row">
+        <span class="col-name"><span class="dot green" style="margin-right:4px"></span> homework: Fix CSS centering (47)</span>
+        <span class="col-status active-text">Active</span>
+        <span class="col-model sonnet-text">sonnet</span>
+        <span class="col-tokens">18.2M</span>
+        <span class="col-cost">$69.42</span>
+      </div>
+      <div class="row">
+        <span class="col-name"><span class="dot gray" style="margin-right:4px"></span> startup: Debug why it worked yesterday</span>
+        <span class="col-status shutdown-text">Shutdown</span>
+        <span class="col-model opus-text">opus</span>
+        <span class="col-tokens">4.2M</span>
+        <span class="col-cost">$18.33</span>
+      </div>
+      <div class="row">
+        <span class="col-name"><span class="dot gray" style="margin-right:4px"></span> side-project: Add dark mode (again)</span>
+        <span class="col-status shutdown-text">Shutdown</span>
+        <span class="col-model haiku-text">haiku</span>
+        <span class="col-tokens">1.1M</span>
+        <span class="col-cost">$4.45</span>
+      </div>
+    </div>
+
+    <!-- Stats Panel -->
+    <div class="panel">
+      <div class="panel-title">Stats</div>
+      <div class="row header" style="border:0">
+        <span class="stat-label"></span>
+        <span class="stat-sess">SESS</span>
+        <span class="stat-tok">TOKENS</span>
+        <span class="stat-cost">COST</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Today</span>
+        <span class="stat-sess">14</span>
+        <span class="stat-tok">112.4M</span>
+        <span class="stat-cost">$420.69</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">This week</span>
+        <span class="stat-sess">89</span>
+        <span class="stat-tok">1.4B</span>
+        <span class="stat-cost">$3,847.20</span>
+      </div>
+      <div class="stat-row total">
+        <span class="stat-label">Total</span>
+        <span class="stat-sess">1,337</span>
+        <span class="stat-tok">16.9B</span>
+        <span class="stat-cost">$13,370.00</span>
+      </div>
+      <div class="stat-section">By Project</div>
+      <div class="stat-row">
+        <span class="stat-label">startup</span>
+        <span class="stat-sess">642</span>
+        <span class="stat-tok">8.1B</span>
+        <span class="stat-cost">$6,420.00</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">side-project</span>
+        <span class="stat-sess">481</span>
+        <span class="stat-tok">5.9B</span>
+        <span class="stat-cost">$4,200.00</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">homework</span>
+        <span class="stat-sess">214</span>
+        <span class="stat-tok">2.9B</span>
+        <span class="stat-cost">$2,750.00</span>
+      </div>
+    </div>
+
+    <!-- Activity Panel -->
+    <div class="panel" style="grid-column:1/-1">
+      <div class="panel-title">Live Activity</div>
+      <div class="act"><span class="act-time">14:20:15</span><span class="act-tool bash">Bash</span><span class="act-summary">cargo build --release (attempt 3, this time for real)</span><span class="act-dur">4200ms</span></div>
+      <div class="act"><span class="act-time">14:19:42</span><span class="act-tool edit">Edit</span><span class="act-summary">src/main.rs — fixed the fix that fixed the fix</span><span class="act-dur">69ms</span></div>
+      <div class="act"><span class="act-time">14:19:30</span><span class="act-tool read">Read</span><span class="act-summary">node_modules/left-pad/index.js (just checking)</span><span class="act-dur">2ms</span></div>
+      <div class="act"><span class="act-time">14:18:55</span><span class="act-tool grep">Grep</span><span class="act-summary">search "TODO: fix later" across src/ — 847 results</span><span class="act-dur">38ms</span></div>
+      <div class="act"><span class="act-time">14:18:12</span><span class="act-tool agent">Agent</span><span class="act-summary">Explore: why is this function 2000 lines long</span><span class="act-dur">13370ms</span></div>
+      <div class="act"><span class="act-time">14:17:00</span><span class="act-tool bash">Bash</span><span class="act-summary">git push --force (yolo)</span><span class="act-dur">420ms</span></div>
+      <div class="act"><span class="act-time">14:16:30</span><span class="act-tool edit">Edit</span><span class="act-summary">src/lib.rs — add pub mod auth</span><span class="act-dur">15ms</span></div>
+      <div class="act"><span class="act-time">14:15:45</span><span class="act-tool read">Read</span><span class="act-summary">Cargo.toml</span><span class="act-dur">3ms</span></div>
+    </div>
+  </div>
+
+  <!-- Status Bar -->
+  <div class="statusbar">
+    <span>cctrack@2026</span>
+    <span>│</span>
+    <span><span class="key">↑↓</span> scroll</span>
+    <span><span class="key">←→</span> panel</span>
+    <span><span class="key">Tab</span> tab</span>
+    <span><span class="key">q</span> quit</span>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "fake-demo",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["serve", "assets", "-l", "9876", "--no-clipboard"],
+      "port": 9876
+    }
+  ]
+}

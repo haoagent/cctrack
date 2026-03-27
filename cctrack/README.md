@@ -68,6 +68,8 @@ cctrack hooks uninstall     # remove hook
 
 ## TUI
 
+![cctrack TUI](assets/tui.png)
+
 | Symbol | Color | Status |
 |--------|-------|--------|
 | ● | Green | Active — running right now |

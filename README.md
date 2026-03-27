@@ -26,10 +26,10 @@ cargo install --path .
 
 ```bash
 cctrack hooks install    # one-time: adds a hook to ~/.claude/settings.json
-cctrack --web            # starts TUI + web dashboard at localhost:7891
+cctrack --web            # starts TUI + web dashboard
 ```
 
-Use Claude Code normally. cctrack picks up everything automatically.
+Open **http://localhost:7891** in your browser. Use Claude Code normally — cctrack picks up everything automatically.
 
 ## Features
 
@@ -67,6 +67,8 @@ cctrack hooks uninstall     # remove hook
 ```
 
 ## TUI
+
+![cctrack TUI](assets/tui.png)
 
 | Symbol | Color | Status |
 |--------|-------|--------|
