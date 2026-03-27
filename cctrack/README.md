@@ -21,7 +21,10 @@
 ## Install
 
 ```bash
-# Download pre-built binary (macOS / Linux)
+# npm (recommended — works on macOS, Linux, Windows)
+npm install -g cctrack
+
+# Or download pre-built binary
 curl -fsSL https://github.com/haoagent/cctrack/releases/latest/download/cctrack-$(uname -m)-apple-darwin.tar.gz | tar xz
 sudo mv cctrack /usr/local/bin/
 

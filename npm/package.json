@@ -1,0 +1,40 @@
+{
+  "name": "cctrack",
+  "version": "0.1.0",
+  "description": "Real-time Claude Code agent monitor. See what they're doing — and what it costs.",
+  "bin": {
+    "cctrack": "bin/cli.js"
+  },
+  "scripts": {
+    "postinstall": "node install.js"
+  },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
+  "keywords": [
+    "claude",
+    "claude-code",
+    "agent",
+    "monitor",
+    "cost",
+    "token",
+    "usage"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/haoagent/cctrack"
+  },
+  "homepage": "https://github.com/haoagent/cctrack",
+  "files": [
+    "bin/",
+    "install.js",
+    "README.md"
+  ]
+}
