@@ -14,41 +14,34 @@ Your agents are burning tokens. See exactly how much — live.
 
 </div>
 
-## 3 commands. That's it.
+## Get started
 
 ```bash
-npm install -g cctrack       # install
+npm install -g cctrack       # or download binary from Releases
 cctrack hooks install        # one-time setup
-cctrack --web                # start monitoring → localhost:7891
+cctrack --web                # → open localhost:7891
 ```
+
+Done. Use Claude Code normally — cctrack picks up everything automatically.
 
 ## What you see
 
-- **Live cost** — per-session, per-project, updates as agents work
+- **Live cost** — per-session, per-project, updates in real time
 - **Every session** — status, model (opus/sonnet/haiku), running cost
 - **Sub-agent trees** — spawned agents, their models, individual costs
 - **30-day charts** — token usage (output, input, cache) and daily cost
 - **Cache hit rate** — is prompt caching actually saving you money?
-- **Quota bars** — real 5h / 7d usage from Claude's API. No more surprise rate limits
-- **Web + TUI** — browser dashboard or terminal UI, your choice
+- **Quota bars** — 5h / 7d usage from Claude's API, no more surprise rate limits
 
 <div align="center">
+
 <img src="assets/tui.png" width="720" />
 
-*TUI — runs alongside your editor. `Tab` to switch sessions.*
+*TUI mode — `Tab` to switch sessions, runs alongside your editor*
+
 </div>
 
-## cctrack vs ccusage
-
-| | [ccusage](https://github.com/ryoppippi/ccusage) | cctrack |
-|---|---|---|
-| **When** | After — analyze past usage | Now — watch agents live |
-| **How** | Run once, get a report | Always-on daemon |
-| **UI** | CLI output | Web dashboard + TUI |
-
-Both are great. ccusage tells you what happened. cctrack shows you what's happening.
-
-## Usage
+## Commands
 
 ```bash
 cctrack                     # TUI only
@@ -57,21 +50,21 @@ cctrack --web-only          # web only (headless)
 cctrack stats               # quick cost summary in terminal
 ```
 
-## How it works
+## Privacy
 
-cctrack installs a [Claude Code hook](https://docs.anthropic.com/en/docs/claude-code) that sends tool call events to a local server. It also reads transcript files for history and token counts.  Everything stays on your machine — no telemetry, no cloud.
+cctrack runs 100% on your machine. It reads Claude Code's local transcript files and receives hook events on localhost. No data leaves your machine, no telemetry, no cloud.
 
-For quota monitoring, log in with `claude /login` and click "Connect to Claude for quota" in the web dashboard.
+## Quota monitor
 
-## Tech
+For real-time quota bars (5h / 7d), log in with `claude /login` then click "Connect to Claude for quota" in the web dashboard.
 
-Single Rust binary. ~3MB, <10MB RAM. Instant startup.
+## Built with Claude Code
 
-This entire project was vibe-coded with Claude Code.
+This entire project was vibe-coded with Claude Code — from the Rust daemon to the web dashboard. Single binary, ~3MB, <10MB RAM, instant startup.
 
-## Acknowledgments
+## See also
 
-Inspired by [ccusage](https://github.com/ryoppippi/ccusage) by [@ryoppippi](https://github.com/ryoppippi).
+- [ccusage](https://github.com/ryoppippi/ccusage) by [@ryoppippi](https://github.com/ryoppippi) — analyze past Claude Code usage and costs. cctrack was inspired by ccusage and focuses on real-time monitoring instead.
 
 ## License
 
