@@ -98,7 +98,10 @@
 
   function renderSessions(t) {
     var isAll=t.name==='all';
-    $('sessions-title', isAll?'Sessions':'Agents');
+    var ag=t.agents||[];
+    var active=ag.filter(function(a){return(a.status||'').toLowerCase()==='active';}).length;
+    var label=(isAll?'Sessions':'Agents')+' ('+active+'/'+ag.length+')';
+    $('sessions-title', label);
     var ag=t.agents||[], tb=document.getElementById('sessions-body'), em=document.getElementById('sessions-empty');
     // Dynamic header: Cost first (most important), Tokens secondary
     var thead = tb.parentElement.querySelector('thead tr');
