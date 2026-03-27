@@ -344,7 +344,7 @@ fn clean_session_title(content: &str) -> Option<String> {
     if first_line.len() < 2 {
         return None;
     }
-    // Skip file paths
+    // Skip file paths (starts with or contains path separators)
     if first_line.starts_with('/') || first_line.starts_with('~') || first_line.contains("\\") {
         return None;
     }
@@ -353,7 +353,19 @@ fn clean_session_title(content: &str) -> Option<String> {
         return None;
     }
 
-    let title: String = first_line.chars().take(32).collect();
+    // Truncate at 32 chars, but not in the middle of a path — if the truncated
+    // result contains a path-like segment, truncate before it instead
+    let mut title: String = first_line.chars().take(32).collect();
+    if let Some(pos) = title.find("/Users/").or_else(|| title.find("/home/")).or_else(|| title.find("/tmp/")) {
+        if pos == 0 {
+            return None;
+        }
+        title = title[..pos].trim().to_string();
+        if title.len() < 2 {
+            return None;
+        }
+    }
+
     Some(title)
 }
 

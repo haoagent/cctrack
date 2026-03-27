@@ -231,22 +231,47 @@ impl TeamState {
         }
         let lead_id = self.config.lead_session_id.clone()?;
 
-        // Determine which transcript to read
-        let tp = transcript_path.map(String::from).or_else(|| {
-            // Derive parent transcript from subagent transcript path
-            // subagent: .../parent-id/subagents/agent-xxx.jsonl
-            // parent:   .../parent-id.jsonl
-            self.tool_events.last()
-                .and_then(|e| e.transcript_path.as_deref())
-                .and_then(|tp| {
-                    let p = std::path::Path::new(tp);
-                    let subagents_dir = p.parent()?;
-                    let session_dir = subagents_dir.parent()?;
-                    let project_dir = session_dir.parent()?;
-                    let parent_file = project_dir.join(format!("{}.jsonl", lead_id));
-                    if parent_file.exists() { Some(parent_file.to_string_lossy().to_string()) } else { None }
-                })
-        })?;
+        // Helper: derive parent transcript from any transcript path
+        let derive_parent_transcript = |tp: &str| -> Option<String> {
+            let p = std::path::Path::new(tp);
+            // Check if this IS the lead session's transcript (filename matches lead_id)
+            if let Some(stem) = p.file_stem().and_then(|s| s.to_str()) {
+                if stem == lead_id {
+                    if p.exists() { return Some(tp.to_string()); }
+                }
+            }
+            // Otherwise derive from subagent path: .../parent-id/subagents/agent-xxx.jsonl
+            let subagents_dir = p.parent()?;
+            let session_dir = subagents_dir.parent()?;
+            let project_dir = session_dir.parent()?;
+            let parent_file = project_dir.join(format!("{}.jsonl", lead_id));
+            if parent_file.exists() { Some(parent_file.to_string_lossy().to_string()) } else { None }
+        };
+
+        // Try the provided transcript path first, then fall back to recent tool events,
+        // then search Claude's projects directory as last resort
+        let tp = transcript_path.and_then(|p| derive_parent_transcript(p))
+            .or_else(|| {
+                self.tool_events.iter().rev().take(10)
+                    .filter_map(|e| e.transcript_path.as_deref())
+                    .find_map(|tp| derive_parent_transcript(tp))
+            })
+            .or_else(|| {
+                // Last resort: search all project dirs for the lead transcript
+                let project_dir = crate::config::Config::claude_home().join("projects");
+                if let Ok(entries) = std::fs::read_dir(&project_dir) {
+                    for entry in entries.flatten() {
+                        let p = entry.path();
+                        if p.is_dir() {
+                            let transcript = p.join(format!("{}.jsonl", lead_id));
+                            if transcript.exists() {
+                                return Some(transcript.to_string_lossy().to_string());
+                            }
+                        }
+                    }
+                }
+                None
+            })?;
 
         let title = crate::collector::hook_server::read_session_title(&tp)?;
         let cwd_name = cwd
