@@ -107,6 +107,10 @@ You ──→ Claude Code ──→ transcripts (~/.claude/projects/)
 
 Single Rust binary. Ratatui (TUI) + Axum (web + SSE) + Chart.js (CDN). tokio async.
 
+## Contributing
+
+PRs and issues welcome! This project is in active development. If you have ideas, bugs, or want to add features — just open an issue or submit a PR.
+
 ## License
 
-MIT
+MIT — use it however you want.
