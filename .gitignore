@@ -1,12 +1,9 @@
 target/
-Agentpay/
-MEMORY/
-CLAUDE.md
-CHANGELOG-*.md
-docs/
 *.log
 .DS_Store
-.claude/launch.json
-.claude/settings.*
-assets/fake-*.html
-assets/web-420.png
+.claude/
+
+# Local-only directories
+Agentpay/
+MEMORY/
+docs/
