@@ -69,7 +69,7 @@ This is why cctrack was built. When Claude Code spawns sub-agents, cctrack:
 - Shows **live tool calls** — Bash, Edit, Read, Grep, Agent — with duration
 - Updates in **real time** as agents work
 
-You can finally see what your agent team session is actually doing.
+You can finally see what your agent team is doing — and what it costs.
 
 ## TUI
 
