@@ -32,6 +32,8 @@ cctrack --web            # start TUI + web dashboard
 
 Open **http://localhost:7891** — cctrack picks up everything automatically.
 
+Sessions with sub-agents get their own tab. Press `Tab` to switch between sessions and see what each agent is doing.
+
 ## What You Get
 
 - **Live cost tracking** — real-time per-session, per-project cost as agents work
